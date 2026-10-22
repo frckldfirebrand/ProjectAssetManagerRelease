@@ -13,9 +13,32 @@ internal class Program
 {
     string modPakFolder = "Mod Paks\\";
     string modDBFolder = "Mod Databases\\";
-    string vanillaDBAC = "VanillaDBAC.uasset";
+    string modExtractedFiles = "Mod Extracted Files\\";
+    string vanillaDBAC = "Vanilla Files\\VanillaDBAC.uasset";
+
+    void extractModPacks()
+    {
+        String[] pakNames = Directory.GetFiles(modPakFolder);
+        foreach (String pakName in pakNames)
+        {
+            PakBuilder pakBuilder = new PakBuilder();
+            FileStream pakFile = new FileStream(pakName, FileMode.Open);
+            PakReader pakReader = pakBuilder.Reader(pakFile);
+            foreach (var file in pakReader.Files())
+            {
+                Console.WriteLine($"File: {file}");
+                String fileLocation = modExtractedFiles + pakName + "\\" + file;
+                byte[] pakBytes = pakReader.Get(pakFile, file);
+                Directory.CreateDirectory(Path.GetDirectoryName(fileLocation));
+                File.WriteAllBytes(fileLocation, pakBytes);
+                //package.Write(packedFile);
+            }
+        }
+    }
+
     private static void Main(string[] args)
     {
+        Program program = new Program();
         bool managerContinue = true;
         Console.WriteLine("Project Assetmanager is away.");
         while (managerContinue)
@@ -42,6 +65,7 @@ internal class Program
                 switch (managerChoice[0])
                 {
                     case 'e':
+                        program.extractModPacks();
                         break;
                     case 'b':
                         break;
