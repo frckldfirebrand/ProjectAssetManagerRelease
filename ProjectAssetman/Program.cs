@@ -56,14 +56,16 @@ internal class Program
                o.GetType().GetGenericTypeDefinition().IsAssignableFrom(typeof(List<>));
     }
 
-    string modPakFolder = "Mod Paks\\";
-    string modDBFolder = "Mod Databases\\";
-    string modExtractedFiles = "Mod Extracted Files\\";
-    string vanillaFolder = "Vanilla Files\\";
-    string PlaneClassFolder = "Plane Files\\";
-    string vanillaDBACLoc = "Vanilla Files\\VanillaDBAC.uasset";
+    String modPakFolder = "Mod Paks\\";
+    String modDBFolder = "Mod Databases\\";
+    String modDTFolder = "Mod DataTables\\";
+    String modExtractedFiles = "Mod Extracted Files\\";
+    String vanillaFolder = "Vanilla Files\\";
+    String PlaneClassFolder = "Plane Files\\";
+    String vanillaDBACLoc = "Vanilla Files\\VanillaDBAC.uasset";
+    String vanillaHangarLoc = "Vanilla Files\\VanillaHangar.uasset";
 
-    
+
     //There's better ways to do this, such as reading from a file or something more dynamically; however, fuck you.
     readonly List<String> vanillaAircraft = new List<String>
     {
@@ -203,7 +205,6 @@ internal class Program
     }
 
 
-
     /*
     void OldCreateJSONsFromDatabase(UAsset vanilla, bool skipVanilla = false, String subFolder = "Vanilla")
     {
@@ -301,11 +302,14 @@ internal class Program
         }
     } */
 
-    void refreshVanillaData(UAsset vanilla)
+    void refreshVanillaData(UAsset vanilla, UAsset hangar)
     {
-        Console.WriteLine("Saving Serialized JSON Copy...");
+        Console.WriteLine("Saving Serialized JSON Copy of Datatable...");
         String jsonSerializedAsset = vanilla.SerializeJson(true);
         File.WriteAllText(vanillaFolder + "vanillaDBAC.JSON", jsonSerializedAsset);
+        Console.WriteLine("Saving Serialized JSON Copy of Hangar Text Table...");
+        jsonSerializedAsset = hangar.SerializeJson(true);
+        File.WriteAllText(vanillaFolder + "vanillaHangar.JSON", jsonSerializedAsset);
         Console.WriteLine("Exported full Asset as JSON");
 
         Console.WriteLine("Scanning Vanilla Database...");
@@ -343,14 +347,20 @@ internal class Program
                 File.WriteAllBytes(fileLocation, pakBytes);
                 
                 //Additionally, if it's a DB_Aircraft file, we want to take a copy of it out so that we can reference it easier elsewhere.
+                String startLoc = modDTFolder + "\\" + Path.GetFileNameWithoutExtension(pakName) + "\\" + Path.GetFileNameWithoutExtension(pakName);
+                Directory.CreateDirectory(modDTFolder + "\\" + Path.GetFileNameWithoutExtension(pakName) + "\\");
                 if (Path.GetFileNameWithoutExtension(fileLocation) == "DB_Aircraft")
                 {
                     //We want the file extension so we copy both the Uasset and Uexp.
-                    String databaseLocation = modDBFolder + Path.GetFileNameWithoutExtension(pakName) + "_dbac" + Path.GetExtension(file);
-                    //Give it a subfolder in the Databases
-                    Directory.CreateDirectory(modDBFolder);
-                    
-                    //Console.WriteLine(databaseLocation);
+                    String databaseLocation = startLoc + "_dbac" + Path.GetExtension(file);
+                    Console.WriteLine(databaseLocation);
+                    File.Copy(fileLocation, databaseLocation, true);
+                }
+                //Hangars too
+                if (Path.GetFileNameWithoutExtension(fileLocation) == "HangarTextTable")
+                {
+                    //We want the file extension so we copy both the Uasset and Uexp.
+                    String databaseLocation = startLoc + "_hangarTable" + Path.GetExtension(file);
                     File.Copy(fileLocation, databaseLocation, true);
                 }
             }
@@ -439,20 +449,27 @@ internal class Program
         FileStream vanillaJson = new FileStream(vanillaFolder + "vanillaDBAC.JSON", FileMode.Open);
         UAsset baseAsset = UAsset.DeserializeJson(vanillaJson);
         DataTableExport baseDataTable = baseAsset.Exports[0] as DataTableExport;
-
         List<StructPropertyData> baseEntries = baseDataTable.Table.Data;
 
-        String[] moddedDBs = Directory.GetFiles(modDBFolder);
+        FileStream vanillaHangar = new FileStream(vanillaFolder + "VanillaHangar.json", FileMode.Open);
+        UAsset baseHangar = UAsset.DeserializeJson(vanillaHangar);
+        DataTableExport bHangarExport = baseHangar.Exports[0] as DataTableExport;
+        List<StructPropertyData> bHangarEntries = bHangarExport.Table.Data;
 
-        Console.WriteLine("Force Enable Prez in each plane? \n (D will disable Presz in all planes) [Y/N/D]");
-        String prezAnswer = Console.ReadLine().ToLower();
-        bool modifyPrez = false;
-        String forcedSeating = "0";
         List<String> includedAircraft = new List<String>();
         foreach (StructPropertyData baseAircraft in baseEntries)
         {
             includedAircraft.Add(baseAircraft.Name.ToString());
         }
+
+        
+
+        String[] modFolders = Directory.GetDirectories(modDTFolder);
+
+        Console.WriteLine("Force Enable Prez in each plane? \n (D will disable Presz in all planes) [Y/N/D]");
+        String prezAnswer = Console.ReadLine().ToLower();
+        bool modifyPrez = false;
+        String forcedSeating = "0";
         if (prezAnswer[0] == 'd' || prezAnswer[0] == 'y')
         {
             modifyPrez = true;
@@ -460,78 +477,87 @@ internal class Program
             else forcedSeating = "2";
         }
 
-        foreach (String modDB in moddedDBs)
+        foreach (String mod in modFolders)
         {
-            if (Path.GetExtension(modDB) == ".uasset")
+            String[] modFiles = Directory.GetFiles(mod);
+
+            Console.WriteLine("Include " + mod + "? [Y/N]");
+            String includeMod = Console.ReadLine().ToLower();
+            if (includeMod[0] == 'y')
             {
-                String modAircraftFolder = PlaneClassFolder + Path.GetFileNameWithoutExtension(modDB);
-                if (Path.Exists(modAircraftFolder))
+                foreach (String modDB in modFiles)
                 {
-                    Console.WriteLine("Include " + modDB + "? [Y/N]");
-                    String includeMod = Console.ReadLine().ToLower();
-                    if (includeMod[0] == 'y')
+                    if (Path.GetExtension(modDB) == ".uasset")
                     {
-                        UAsset modDBAC = new UAsset(modDB, EngineVersion.VER_UE4_27);
-                        DataTableExport moddedDataTable = modDBAC.Exports[0] as DataTableExport;
-                        List<StructPropertyData> moddedEntries = moddedDataTable.Table.Data;
+                        String modAircraftFolder = PlaneClassFolder + Path.GetFileNameWithoutExtension(modDB);
+                        if (Path.Exists(modAircraftFolder))
+                        {
+                            UAsset modDBAC = new UAsset(modDB, EngineVersion.VER_UE4_27);
+                            DataTableExport moddedDataTable = modDBAC.Exports[0] as DataTableExport;
+                            List<StructPropertyData> moddedEntries = moddedDataTable.Table.Data;
 
-                        foreach (FString name in modDBAC.GetNameMapIndexList())
-                        {
-                            if (!baseAsset.ContainsNameReference(name)) baseAsset.AddNameReference(name, false, false);
-                        }
-                        foreach (Import import in modDBAC.Imports)
-                        {
-                            if (baseAsset.SearchForImport(import.ObjectName) == 0) baseAsset.AddImport(import);
-                        }
-                        
-                        foreach (StructPropertyData aircraft in moddedEntries)
-                        {
-                            Console.WriteLine("Found " + aircraft.Name);
-                            String aircraftFileLoc = modAircraftFolder + "\\" + aircraft.Name + ".json";
-                            Console.WriteLine("Attempting to find" + aircraftFileLoc);
-                            if (Path.Exists(aircraftFileLoc))
+                            foreach (FString name in modDBAC.GetNameMapIndexList())
                             {
-                                Console.WriteLine("Found " + aircraftFileLoc);
-                                String savedAircraftJson = File.ReadAllText(aircraftFileLoc);
-                                //Console.WriteLine(savedAircraftJson);
-
-                                var options = new JsonSerializerOptions {IncludeFields = true};
-
-                                ProWingPlane savedAircraft = JsonSerializer.Deserialize<ProWingPlane>(savedAircraftJson, options);
-                                if (modifyPrez)
-                                {
-                                    savedAircraft.PlaneProperties[
-                                        "BoneDetails_46_F00ED91D4FDF91F973A7DAAF8A291DBF"].SubProperties[
-                                        "PilotCount_2_65D06B7D492533AA2F8E9DA8254C5747"].Value = forcedSeating.ToString();
-                                }
-                                if (!includedAircraft.Contains(aircraft.Name.ToString()))
-                                {
-                                    includedAircraft.Add(aircraft.Name.ToString());
-                                    baseEntries.Add(aircraft);
-                                }
-                                StructPropertyData currentAircraft = baseEntries.Find(x => x.Name == aircraft.Name);
-                                foreach (PropertyData currentProp in currentAircraft.Value)
-                                {
-                                    String propertyName = currentProp.Name.ToString();
-                                    DataTableProperty currentProperty = savedAircraft.PlaneProperties[propertyName];
-                                    handleProperty(currentProp, baseAsset, currentProperty, savedAircraft);
-                                }
+                                if (!baseAsset.ContainsNameReference(name)) baseAsset.AddNameReference(name, false, false);
+                            }
+                            foreach (Import import in modDBAC.Imports)
+                            {
+                                if (baseAsset.SearchForImport(import.ObjectName) == 0) baseAsset.AddImport(import);
                             }
 
+                            foreach (StructPropertyData aircraft in moddedEntries)
+                            {
+                                Console.WriteLine("Found " + aircraft.Name);
+                                String aircraftFileLoc = modAircraftFolder + "\\" + aircraft.Name + ".json";
+                                Console.WriteLine("Attempting to find" + aircraftFileLoc);
+                                if (Path.Exists(aircraftFileLoc))
+                                {
+                                    Console.WriteLine("Found " + aircraftFileLoc);
+                                    String savedAircraftJson = File.ReadAllText(aircraftFileLoc);
+                                    //Console.WriteLine(savedAircraftJson);
+
+                                    var options = new JsonSerializerOptions { IncludeFields = true };
+
+                                    ProWingPlane savedAircraft = JsonSerializer.Deserialize<ProWingPlane>(savedAircraftJson, options);
+                                    if (modifyPrez)
+                                    {
+                                        savedAircraft.PlaneProperties[
+                                            "BoneDetails_46_F00ED91D4FDF91F973A7DAAF8A291DBF"].SubProperties[
+                                            "PilotCount_2_65D06B7D492533AA2F8E9DA8254C5747"].Value = forcedSeating.ToString();
+                                    }
+                                    if (!includedAircraft.Contains(aircraft.Name.ToString()))
+                                    {
+                                        includedAircraft.Add(aircraft.Name.ToString());
+                                        baseEntries.Add(aircraft);
+                                    }
+                                    StructPropertyData currentAircraft = baseEntries.Find(x => x.Name == aircraft.Name);
+                                    foreach (PropertyData currentProp in currentAircraft.Value)
+                                    {
+                                        String propertyName = currentProp.Name.ToString();
+                                        DataTableProperty currentProperty = savedAircraft.PlaneProperties[propertyName];
+                                        handleProperty(currentProp, baseAsset, currentProperty, savedAircraft);
+                                    }
+                                }
+
+                            }
                         }
+
 
                     }
                 }
 
             }
         }
-        Console.WriteLine("What should we name this new Database?");
+        Console.WriteLine("What should we name this new Aircraft Database?");
         String fileName = Console.ReadLine().ToLower();
         fileName = modDBFolder + Path.GetFileNameWithoutExtension(fileName) + ".uasset";
+
         baseAsset.Write(fileName);
+        
         UAsset dtRefresh = new UAsset(fileName, EngineVersion.VER_UE4_27);
         Console.WriteLine(dtRefresh.VerifyBinaryEquality());
         dtRefresh.Write(fileName);
+
 
     }
 
@@ -541,7 +567,7 @@ internal class Program
         bool managerContinue = true;
         Console.WriteLine("Project Assetmanager is away.");
         UAsset vanillaDBAC = new UAsset(program.vanillaDBACLoc,EngineVersion.VER_UE4_27);
-        
+        UAsset vanillaHangar = new UAsset(program.vanillaHangarLoc, EngineVersion.VER_UE4_27);
         
         while (managerContinue)
         {
@@ -568,7 +594,7 @@ internal class Program
                 switch (managerChoice[0])
                 {
                     case 'r':
-                        program.refreshVanillaData(vanillaDBAC);
+                        program.refreshVanillaData(vanillaDBAC, vanillaHangar);
                         break;
                     case 'e':
                         program.extractModPacks();
