@@ -416,6 +416,16 @@ internal class Program
                     }
                 }
                 break;
+            case "FloatProperty":
+                property.SetObject(float.Parse(dataProp.Value)); break;
+            case "IntProperty":
+                property.SetObject(int.Parse(dataProp.Value)); break;
+            case "DoubleProperty":
+                property.SetObject(float.Parse(dataProp.Value)); break;
+            case "StringProperty":
+                property.SetObject(dataProp.Value); break;
+            case "BoolProperty":
+                property.SetObject(bool.Parse(dataProp.Value)); break;
             default:
                 //Console.WriteLine(propertyType);
                 //property.FromString(dataProp.Value, asset);
