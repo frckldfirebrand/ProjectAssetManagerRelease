@@ -10,12 +10,62 @@ using UAssetAPI.ExportTypes;
 using UAssetAPI.PropertyTypes.Objects;
 using UAssetAPI.PropertyTypes.Structs;
 using UAssetAPI.UnrealTypes;
+
 internal class Program
 {
-    class ProWingPlane
+    static JsonSerializerOptions SerializerOptions = new JsonSerializerOptions { WriteIndented = true, IncludeFields = true };
+    
+    static void CopyDirectory(string sourceDir, string destinationDir, bool recursive)
+    {
+        // Get information about the source directory
+        var dir = new DirectoryInfo(sourceDir);
+
+        // Check if the source directory exists
+        if (!dir.Exists)
+            throw new DirectoryNotFoundException($"Source directory not found: {dir.FullName}");
+
+        // Cache directories before we start copying
+        DirectoryInfo[] dirs = dir.GetDirectories();
+
+        // Create the destination directory
+        Directory.CreateDirectory(destinationDir);
+
+        // Get the files in the source directory and copy to the destination directory
+        foreach (FileInfo file in dir.GetFiles())
+        {
+            string targetFilePath = Path.Combine(destinationDir, file.Name);
+            file.CopyTo(targetFilePath);
+        }
+
+        // If recursive and copying subdirectories, recursively call this method
+        if (recursive)
+        {
+            foreach (DirectoryInfo subDir in dirs)
+            {
+                string newDestinationDir = Path.Combine(destinationDir, subDir.Name);
+                CopyDirectory(subDir.FullName, newDestinationDir, true);
+            }
+        }
+    }
+
+    class PWMod
+    {
+        public PWMod() { }
+        public String Name;
+        public List<String>? ModFiles;
+        public List<String>? ModDataTables;
+        public List<String>? ModJSONs;
+    }
+    class PWDataTable
+    {
+        public PWDataTable() { }
+        String Name;
+        List<PWDataEntry> DataEntries;
+    }
+    class PWDataEntry
     {
         [JsonConstructor]
-        public ProWingPlane(String Name, Dictionary<String, String> PlaneAssets, Dictionary<String, DataTableProperty> PlaneProperties)
+        public PWDataEntry(String Name, Dictionary<String, String> PlaneAssets, Dictionary<String, DataTableProperty> PlaneProperties)
         {
             this.Name = Name;
             this.PlaneAssets = PlaneAssets;
@@ -56,14 +106,17 @@ internal class Program
                o.GetType().GetGenericTypeDefinition().IsAssignableFrom(typeof(List<>));
     }
 
+    String ProcessedFiles = "Processed Files\\";
+    String modJSONFolder = "Mod JSONs\\";
     String modPakFolder = "Mod Paks\\";
-    String modDBFolder = "Mod Databases\\";
     String modDTFolder = "Mod DataTables\\";
     String modExtractedFiles = "Mod Extracted Files\\";
     String vanillaFolder = "Vanilla Files\\";
     String PlaneClassFolder = "Plane Files\\";
+    String vanillaDataFolder = "Vanilla Files\\Vanilla Data";
     String vanillaDBACLoc = "Vanilla Files\\VanillaDBAC.uasset";
     String vanillaHangarLoc = "Vanilla Files\\VanillaHangar.uasset";
+    String createdModFolder = "Created Mods\\";
 
 
     //There's better ways to do this, such as reading from a file or something more dynamically; however, fuck you.
@@ -166,12 +219,12 @@ internal class Program
         return property;
     }
 
-    void CreateJSONsFromDatabase(UAsset vanilla, bool skipVanilla = false, String subFolder = "Vanilla")
+    void CreateJSONsFromDatabase(UAsset asset, bool skipVanilla = false, String subFolder = "Vanilla")
     {
-        Export vanillaEXP = vanilla["DB_Aircraft"];
-        if (vanillaEXP is DataTableExport vanillaDT)
+        Export assetEXP = asset.Exports[0];
+        if (assetEXP is DataTableExport assetDT)
         {
-            List<StructPropertyData> entries = vanillaDT.Table.Data;
+            List<StructPropertyData> entries = assetDT.Table.Data;
             foreach (StructPropertyData line in entries)
             {
                 //Using the name of the row of stats, we can get a name to use for the aircraft
@@ -180,9 +233,9 @@ internal class Program
                 if (skipVanilla)
                 {
                     if (!vanillaAircraft.Contains(aircraftName))
-                    { WriteAircraftJSON(vanilla, subFolder, line, aircraftName); } else Console.WriteLine("Found Vanilla Aircraft.");
+                    { WriteAircraftJSON(asset, subFolder, line, aircraftName); } else Console.WriteLine("Found Vanilla Aircraft.");
                 }
-                else WriteAircraftJSON(vanilla, subFolder, line, aircraftName);
+                else WriteAircraftJSON(asset, subFolder, line, aircraftName);
             }
         }
     }
@@ -190,7 +243,7 @@ internal class Program
     private void WriteAircraftJSON(UAsset vanilla, string subFolder, StructPropertyData line, string aircraftName)
     {
         //Where we'll save the individual aircraft Json
-        String aircraftLoc = PlaneClassFolder + "//" + subFolder + "//" + aircraftName;
+        String aircraftLoc = ProcessedFiles + "//" + subFolder + "//" + aircraftName;
         Dictionary<String, DataTableProperty> aircraftProps = new Dictionary<String, DataTableProperty>();
         Dictionary<String, String> aircraftAssets = new Dictionary<String, String>();
         foreach (PropertyData propData in line.Value)
@@ -198,110 +251,11 @@ internal class Program
             aircraftProps.Add(propData.Name.ToString(), SaveDataTableProperty(propData, vanilla, aircraftAssets));
         }
         Directory.CreateDirectory(Path.GetDirectoryName(aircraftLoc));
-        ProWingPlane aircraft = new ProWingPlane(aircraftName, aircraftAssets, aircraftProps);
-        var options = new JsonSerializerOptions { WriteIndented = true, IncludeFields = true };
-        String aircraftJSON = JsonSerializer.Serialize(aircraft, options);
+        PWDataEntry aircraft = new PWDataEntry(aircraftName, aircraftAssets, aircraftProps);;
+        String aircraftJSON = JsonSerializer.Serialize(aircraft, SerializerOptions);
         File.WriteAllText(aircraftLoc + ".JSON", aircraftJSON);
     }
-
-
-    /*
-    void OldCreateJSONsFromDatabase(UAsset vanilla, bool skipVanilla = false, String subFolder = "Vanilla")
-    {
-        Export vanillaEXP = vanilla["DB_Aircraft"];
-        if (vanillaEXP is DataTableExport vanillaDT)
-        {
-            List<StructPropertyData> entries = vanillaDT.Table.Data;
-            foreach (StructPropertyData line in entries)
-            {
-                //Using the name of the row of stats, we can get a name to use for the aircraft
-                String aircraftName = line.Name.ToString();
-                Console.WriteLine("Found " + aircraftName + "...");
-                //Where we'll save the individual aircraft Json
-                String aircraftLoc = PlaneClassFolder + "//" + subFolder + "//" + aircraftName;
-                Dictionary<String, String> aircraftProps = new Dictionary<String, String>();
-                Dictionary<String, Dictionary<String, String>> aircraftArrayProperties = new Dictionary<String, Dictionary<String, String>>();
-                Dictionary<String, String> aircraftAssets = new Dictionary<String, String>();
-                String seat = "";
-                foreach (PropertyData propData in line.Value)
-                {
-                    //Generic casting is bad but I don't know a smarter way to do it yet.
-                    Object propValue = propData.GetObject<Object>();
-                    switch (propData.PropertyType.ToString())
-                    {
-                        case "ObjectProperty":
-                            Console.WriteLine("  Adding ObjectProperty...");
-                            ObjectPropertyData objValue = (ObjectPropertyData)propData;
-                            if (objValue.IsImport())
-                            {
-                                Import objImport = objValue.ToImport(vanilla);
-                                aircraftAssets.Add(objValue.Name.ToString(), objImport.ObjectName.ToString());
-                            }
-                            aircraftProps.Add(propData.Name.ToString(), propValue.ToString());
-                            break;
-                        case "TextProperty":
-                            Console.WriteLine("  Adding TextProperty...");
-                            TextPropertyData textProp = (TextPropertyData)propData;
-                            if (textProp.CultureInvariantString != null) { aircraftProps.Add(propData.Name.ToString(), textProp.CultureInvariantString.ToString()); }
-                            break;
-                        case "ArrayProperty":
-                            Console.WriteLine("  Adding ArrayProperty...");
-                            ArrayPropertyData arrayProp = (ArrayPropertyData)propData;
-                            Dictionary<String, String> subProps = new Dictionary<String, String>();
-                            for (int i = 0; i < arrayProp.Value.Length; i++)
-                            {
-                                PropertyData subData = arrayProp.Value[i];
-                                Object subValue = subData.GetObject<Object>();
-                                if (subValue != null) { subProps.Add(subData.Name.ToString(), subValue.ToString()); }
-                            }
-                            aircraftArrayProperties.Add(propData.Name.ToString(), subProps);
-                            break;
-                        case "StructProperty":
-                            Console.WriteLine("  Adding StructProperty...");
-                            if (IsList(propValue))
-                            {
-                                List<PropertyData> subDataList = propValue as List<PropertyData>;
-                                Dictionary<String, String> subPropList = new Dictionary<String, String>();
-                                foreach (PropertyData subData in subDataList)
-                                {
-                                    //Blargh. More Data.
-                                    Object subValue = subData.GetObject<Object>();
-
-                                    if (subData.PropertyType.ToString() == "StructProperty")
-                                    {
-                                        if (subData.Name.ToString() == "PilotSeatOffset_67_0AB6CD564D0433D8C96FB7B6B5AFD133")
-                                        {
-                                            List<PropertyData> subSubDataList = subValue as List<PropertyData>;
-                                            Object subSubValue = subSubDataList.FirstOrDefault().GetObject<Object>();
-                                            seat = subSubValue.ToString();
-                                        }
-                                    } else
-                                    {
-                                        if (subValue != null) { subPropList.Add(subData.Name.ToString(), subValue.ToString()); }
-                                    }
-
-                                }
-                                aircraftArrayProperties.Add(propData.Name.ToString(), subPropList);
-                            }
-                            break;
-                        default:
-                            Console.WriteLine("  Adding " + propData.PropertyType.ToString() + "...");
-                            if (propValue != null)
-                            {
-                                aircraftProps.Add(propData.Name.ToString(), propValue.ToString());
-                            }
-                            break;
-                    }
-                }
-                Directory.CreateDirectory(Path.GetDirectoryName(aircraftLoc));
-                ProWingPlane aircraft = new ProWingPlane(aircraftName, aircraftAssets, aircraftProps, aircraftArrayProperties, seat);
-                var options = new JsonSerializerOptions { WriteIndented = true, IncludeFields = true };
-                String aircraftJSON = JsonSerializer.Serialize(aircraft, options);
-                File.WriteAllText(aircraftLoc + ".JSON", aircraftJSON);
-            }
-        }
-    } */
-
+    
     void refreshVanillaData(UAsset vanilla, UAsset hangar)
     {
         Console.WriteLine("Saving Serialized JSON Copy of Datatable...");
@@ -314,14 +268,14 @@ internal class Program
 
         Console.WriteLine("Scanning Vanilla Database...");
 
-        CreateJSONsFromDatabase(vanilla);
+        DatabaseExtract(vanillaDataFolder, false, true);
 
     }
 
     void extractModPacks()
     {
         //This gets us every file in the folder where we put our Paks.
-        String[] pakNames = Directory.GetFiles(modPakFolder);
+        String[] pakNames = Directory.GetFiles(modPakFolder, "*.pak");
         
         //Iterate over each String
         foreach (String pakName in pakNames)
@@ -330,14 +284,31 @@ internal class Program
             PakBuilder pakBuilder = new PakBuilder();
             FileStream pakFile = new FileStream(pakName, FileMode.Open);
             PakReader pakReader = pakBuilder.Reader(pakFile);
-            
+
+            String thisPaksName = Path.GetFileNameWithoutExtension(pakName);
+            PWMod thisMod = new PWMod
+            {
+                Name = thisPaksName,
+                ModFiles = new List<String>(),
+                ModDataTables = new List<String>(),
+                ModJSONs = new List<String>()
+            };
+
+            if (!Directory.Exists(modJSONFolder)) Directory.CreateDirectory(modJSONFolder);
+
+            String modDTDirectory = modDTFolder + "\\" + Path.GetFileNameWithoutExtension(pakName) + "\\Data\\";
+
+            //Delete the modDTFolder first.
+            if (Directory.Exists(modDTDirectory))
+                Directory.Delete(modDTDirectory, true);
+
             //Then we want to scan each file in the pak.
             foreach (var file in pakReader.Files())
             {
                 //Log the file for sanity.
                 Console.WriteLine($"File: {file}");
                 //Set an export location in the same structure as it was found in the file, but sorted.
-                String fileLocation = modExtractedFiles + pakName + "\\" + file;
+                String fileLocation = modExtractedFiles + thisPaksName + "\\" + file;
                 //Remember: a file in a pak is just a bunch of bytes, and the Pakreader gets us that information as it would be extracted. Neat!
                 byte[] pakBytes = pakReader.Get(pakFile, file);
 
@@ -345,53 +316,45 @@ internal class Program
                 Directory.CreateDirectory(Path.GetDirectoryName(fileLocation));
                 //Then write it!
                 File.WriteAllBytes(fileLocation, pakBytes);
-                
-                //Additionally, if it's a DB_Aircraft file, we want to take a copy of it out so that we can reference it easier elsewhere.
-                String startLoc = modDTFolder + "\\" + Path.GetFileNameWithoutExtension(pakName) + "\\" + Path.GetFileNameWithoutExtension(pakName);
-                Directory.CreateDirectory(modDTFolder + "\\" + Path.GetFileNameWithoutExtension(pakName) + "\\");
-                if (Path.GetFileNameWithoutExtension(fileLocation) == "DB_Aircraft")
-                {
-                    //We want the file extension so we copy both the Uasset and Uexp.
-                    String databaseLocation = startLoc + "_dbac" + Path.GetExtension(file);
-                    Console.WriteLine(databaseLocation);
-                    File.Copy(fileLocation, databaseLocation, true);
-                }
-                //Hangars too
-                if (Path.GetFileNameWithoutExtension(fileLocation) == "HangarTextTable")
-                {
-                    //We want the file extension so we copy both the Uasset and Uexp.
-                    String databaseLocation = startLoc + "_hangarTable" + Path.GetExtension(file);
-                    File.Copy(fileLocation, databaseLocation, true);
-                }
+                thisMod.ModFiles.Add(file);
             }
+            //Now recreate the DT Directory
+            Directory.CreateDirectory(modDTFolder + "\\" + Path.GetFileNameWithoutExtension(pakName) + "\\");
+
+            String ModDataDirectory = modExtractedFiles + thisPaksName + "\\ProjectWingman\\Content\\ProjectWingman\\Blueprints\\Data";
+
+            if (Path.Exists(ModDataDirectory))
+            {
+                foreach(String dtFile in Directory.GetFiles(ModDataDirectory, "*.uasset", new EnumerationOptions {  RecurseSubdirectories = true }))
+                {
+                    thisMod.ModDataTables.Add(Path.GetFileName(dtFile));
+                }
+                CopyDirectory(ModDataDirectory, modDTDirectory, true);
+            }
+            String modJSONLoc = modJSONFolder + thisPaksName + ".json";
+            String modJSON = JsonSerializer.Serialize(thisMod, SerializerOptions);
+            File.WriteAllText(modJSONLoc, modJSON);
         }
     }
-    void fullModdedDatabaseExtract()
+    void DatabaseExtract(String directory, bool skipVanilla, bool isVanilla = false)
     {
-        String[] moddedDBs = Directory.GetFiles(modDBFolder);
-        foreach (String modDB in moddedDBs)
+        if (!Directory.Exists(ProcessedFiles)) { Directory.CreateDirectory(ProcessedFiles); }
+        String[] dataFolders = Directory.GetDirectories(directory);
+        foreach (String dataFolder in dataFolders)
         {
-            if (Path.GetExtension(modDB) == ".uasset")
+            String[] dataTables = Directory.GetFiles(dataFolder, "*.uasset", new EnumerationOptions { RecurseSubdirectories = true });
+            foreach (String dataTable in dataTables)
             {
-                UAsset modDBAC = new UAsset(modDB, EngineVersion.VER_UE4_27);
-                CreateJSONsFromDatabase(modDBAC, false, Path.GetFileNameWithoutExtension(modDB));
-            }
-        }
-    }
-    void partialModdedDatabaseExtract()
-    {
-        String[] moddedDBs = Directory.GetFiles(modDBFolder);
-        foreach (String modDB in moddedDBs)
-        {
-            if (Path.GetExtension(modDB) == ".uasset")
-            {
-                UAsset modDBAC = new UAsset(modDB, EngineVersion.VER_UE4_27);
-                CreateJSONsFromDatabase(modDBAC, true, modDB);
+                String fileSavePath;
+                if (isVanilla) fileSavePath = "Vanilla\\" + Path.GetFileName(dataFolder) + "\\" + Path.GetFileName(dataTable);
+                else fileSavePath = Path.GetFileName(dataFolder) + "\\" + Path.GetFileName(dataTable);
+                UAsset dB = new UAsset(dataTable, EngineVersion.VER_UE4_27);
+                CreateJSONsFromDatabase(dB, skipVanilla, fileSavePath);
             }
         }
     }
     
-    void handleProperty(PropertyData property, UAsset asset, DataTableProperty dataProp, ProWingPlane plane)
+    void handleProperty(PropertyData property, UAsset asset, DataTableProperty dataProp, PWDataEntry plane)
     {
         String propertyName = property.Name.ToString();
         String propertyType = property.PropertyType.ToString();
@@ -516,9 +479,8 @@ internal class Program
                                     String savedAircraftJson = File.ReadAllText(aircraftFileLoc);
                                     //Console.WriteLine(savedAircraftJson);
 
-                                    var options = new JsonSerializerOptions { IncludeFields = true };
-
-                                    ProWingPlane savedAircraft = JsonSerializer.Deserialize<ProWingPlane>(savedAircraftJson, options);
+                                    PWDataEntry savedAircraft = JsonSerializer.Deserialize<PWDataEntry>(savedAircraftJson, SerializerOptions);
+                                    
                                     if (modifyPrez)
                                     {
                                         savedAircraft.PlaneProperties[
@@ -550,7 +512,7 @@ internal class Program
         }
         Console.WriteLine("What should we name this new Aircraft Database?");
         String fileName = Console.ReadLine().ToLower();
-        fileName = modDBFolder + Path.GetFileNameWithoutExtension(fileName) + ".uasset";
+        fileName = modDTFolder + Path.GetFileNameWithoutExtension(fileName) + ".uasset";
 
         baseAsset.Write(fileName);
         
@@ -576,12 +538,9 @@ internal class Program
                 "Enter [R] to Refresh Vanilla Files (needed first time)\n" +
                 "Enter [E] to Extract Mod Paks. \n" +
                 "Enter [B] to Build Individual Databases from Modded DB_Aircraft's\n" +
-                "Enter [C] to Combine Databases\n" +
-                "Enter [D] to Create a new DB_Aircraft in the Deployment Directory\n" +
-                "Enter [P] to Pak the Deployment Directory\n" +
+                "Enter [C] to Create a Combined Mod\n" +
                 "Enter [Q] to Quit.\n"
                 );
-
             string managerChoice = Console.ReadLine();
             if (managerChoice is null)
             {
@@ -610,19 +569,15 @@ internal class Program
                         switch (skipChoice[0])
                         {
                             case 'y':
-                                program.partialModdedDatabaseExtract(); 
+                                program.DatabaseExtract(program.modDTFolder, true); 
                                 break;
                             case 'n':
-                                program.fullModdedDatabaseExtract();
+                                program.DatabaseExtract(program.modDTFolder, false);
                                 break;
                         }
                         break;
                     case 'c':
                         program.combineDatabases();
-                        break;
-                    case 'd':
-                        break;
-                    case 'p':
                         break;
                     case 'q':
                         managerContinue = false;
