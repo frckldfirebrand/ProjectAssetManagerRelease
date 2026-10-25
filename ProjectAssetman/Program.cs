@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.ComponentModel;
+using System.Data;
 using System.Diagnostics.Metrics;
 using System.Reflection;
 using System.Text;
@@ -65,7 +66,7 @@ internal class Program
     class PWDataEntry
     {
         [JsonConstructor]
-        public PWDataEntry(String Name, Dictionary<String, String> DataAssets, Dictionary<String, DataTableProperty> PlaneProperties)
+        public PWDataEntry(String Name, Dictionary<String, String> DataAssets, Dictionary<String, DataTableProperty> DataProperties)
         {
             this.Name = Name;
             this.DataAssets = DataAssets;
@@ -417,6 +418,8 @@ internal class Program
         List<String> includedAircraft = new List<String>();
         List<String> includedMods = new List<String>();
 
+        List<String> modDTPaths = new List<String>();
+
         String[] mods = Directory.GetFiles(modJSONFolder);
 
         foreach (String mod in mods)
@@ -425,17 +428,34 @@ internal class Program
             String includeMod = Console.ReadLine().ToLower();
             if (includeMod[0] == 'y')
             {
+                String modName = Path.GetFileNameWithoutExtension(mod);
                 includedMods.Add(mod);
                 String modJson = File.ReadAllText(mod);
                 PWMod thisJson = JsonSerializer.Deserialize<PWMod>(modJson, SerializerOptions);
                 foreach (String dt in thisJson.ModDataTables)
                 {
                     if (!modifiedDatatables.Contains(dt)) modifiedDatatables.Add(dt);
+                    Console.WriteLine("  Getting paths for {0} at {1}",dt, Path.Combine(modDTFolder, modName));
+                    String[] paths = Directory.GetFiles(Path.Combine(modDTFolder, modName), "*.uasset", DefaultEnumeration);
+                    Console.WriteLine("  Found {0}", paths);
+                    modDTPaths.AddRange(paths);
                 }
             }
         }
 
-        Console.WriteLine("Force Enable Prez in each plane? \n (D will disable Presz in all planes) [Y/N/D]");
+        Console.WriteLine("Requires the following datatables:");
+        foreach (String datatable in modifiedDatatables)
+        {
+            Console.WriteLine("  {0},", datatable);
+        }
+
+        Console.WriteLine("\n Found Data Tables at:");
+        foreach(String path in modDTPaths)
+        {
+            Console.WriteLine("  {0},", path);
+        }
+
+        Console.WriteLine("Force Enable Prez in each plane? \n(D will disable Presz in all planes) [Y/N/D]");
         String prezAnswer = Console.ReadLine().ToLower();
         bool modifyPrez = false;
         String forcedSeating = "0";
@@ -448,66 +468,89 @@ internal class Program
 
         foreach (String combineDatatable in modifiedDatatables)
         {
+            Console.WriteLine("Handling {0}...", combineDatatable);
+
+            String baseAssetPath = Directory.GetFiles(vanillaDataFolder, combineDatatable, DefaultEnumeration)[0];
+            Console.WriteLine("Found vanilla asset at {0}", baseAssetPath);
+
             List<String> includedEntries = new List<String>();
             
-            UAsset baseAsset = new UAsset(Directory.GetFiles(vanillaDataFolder, combineDatatable, DefaultEnumeration)[0], EngineVersion.VER_UE4_27);
+            UAsset baseAsset = new UAsset(baseAssetPath, EngineVersion.VER_UE4_27);
+
             DataTableExport baseDataTable = baseAsset.Exports[0] as DataTableExport;
             List<StructPropertyData> baseEntries = baseDataTable.Table.Data;
 
+            foreach (StructPropertyData entry in baseEntries)
+            {
+                includedEntries.Add(entry.Name.ToString());
+            }
+
             foreach (String mod in includedMods)
             {
-                String modFolder = ProcessedFiles + "\\" + Path.GetFileNameWithoutExtension(mod);
-                UAsset modDBAC = new UAsset(Directory.GetFiles(modFolder, combineDatatable, DefaultEnumeration)[0], EngineVersion.VER_UE4_27);
-                
-                DataTableExport moddedDataTable = modDBAC.Exports[0] as DataTableExport;
-                List<StructPropertyData> moddedEntries = moddedDataTable.Table.Data;
+                String modName = Path.GetFileNameWithoutExtension(mod);
+                String modJsonFolder = Path.Combine(ProcessedFiles, modName);
+                String modDataFolder = Path.Combine(modDTFolder, modName);
 
-                foreach (FString name in modDBAC.GetNameMapIndexList())
+                String[] paths = Directory.GetFiles(Path.Combine(modDTFolder, modName), Path.GetFileName(combineDatatable), DefaultEnumeration);
+
+                if (paths != null && paths.Length > 0)
                 {
-                    if (!baseAsset.ContainsNameReference(name)) baseAsset.AddNameReference(name, false, false);
-                }
-                foreach (Import import in modDBAC.Imports)
-                {
-                    if (baseAsset.SearchForImport(import.ObjectName) == 0) baseAsset.AddImport(import);
-                }
-                foreach (StructPropertyData tableEntry in moddedEntries)
-                {
-                    Console.WriteLine("Found " + tableEntry.Name);
-                    String tableEntryFileLoc = ProcessedFiles + "\\" + mod + "\\" + combineDatatable + "\\" + tableEntry.Name + ".json";
-                    Console.WriteLine("Attempting to find" + tableEntryFileLoc);
-                    if (Path.Exists(tableEntryFileLoc))
+                    string dataTableEntry = paths[0];
+                    Console.WriteLine("Found {0}", dataTableEntry);
+                    UAsset modDBAC = new UAsset(dataTableEntry, EngineVersion.VER_UE4_27);
+
+                    DataTableExport moddedDataTable = modDBAC.Exports[0] as DataTableExport;
+                    List<StructPropertyData> moddedEntries = moddedDataTable.Table.Data;
+
+                    foreach (FString name in modDBAC.GetNameMapIndexList())
                     {
-                        Console.WriteLine("Found " + tableEntryFileLoc);
-                        String savedEntryJson = File.ReadAllText(tableEntryFileLoc);
-                        //Console.WriteLine(savedAircraftJson);
+                        if (!baseAsset.ContainsNameReference(name)) baseAsset.AddNameReference(name, false, false);
+                    }
+                    foreach (Import import in modDBAC.Imports)
+                    {
+                        if (baseAsset.SearchForImport(import.ObjectName) == 0) baseAsset.AddImport(import);
+                    }
+                    foreach (StructPropertyData tableEntry in moddedEntries)
+                    {
+                        Console.WriteLine("Found " + tableEntry.Name);
+                        String tableEntryFileLoc = ProcessedFiles + "\\" + modName + "\\" + combineDatatable + "\\" + tableEntry.Name + ".json";
+                        Console.WriteLine("Attempting to find" + tableEntryFileLoc);
+                        if (Path.Exists(tableEntryFileLoc))
+                        {
+                            Console.WriteLine("Found " + tableEntryFileLoc);
+                            String savedEntryJson = File.ReadAllText(tableEntryFileLoc);
+                            //Console.WriteLine(savedAircraftJson);
 
-                        PWDataEntry savedEntry = JsonSerializer.Deserialize<PWDataEntry>(savedEntryJson, SerializerOptions);
+                            PWDataEntry savedEntry = JsonSerializer.Deserialize<PWDataEntry>(savedEntryJson, SerializerOptions);
 
-                        if (modifyPrez && combineDatatable == "DB_Aircraft")
-                        {
-                            savedEntry.DataProperties[
-                                "BoneDetails_46_F00ED91D4FDF91F973A7DAAF8A291DBF"].SubProperties[
-                                "PilotCount_2_65D06B7D492533AA2F8E9DA8254C5747"].Value = forcedSeating.ToString();
-                        }
-                        if (!includedEntries.Contains(tableEntry.Name.ToString()))
-                        {
-                            includedEntries.Add(tableEntry.Name.ToString());
-                            baseEntries.Add(tableEntry);
-                        }
-                        StructPropertyData currentAircraft = baseEntries.Find(x => x.Name == tableEntry.Name);
-                        foreach (PropertyData currentProp in currentAircraft.Value)
-                        {
-                            String propertyName = currentProp.Name.ToString();
-                            DataTableProperty currentProperty = savedEntry.DataProperties[propertyName];
-                            handleProperty(currentProp, baseAsset, currentProperty, savedEntry);
+                            if (modifyPrez && combineDatatable == "DB_Aircraft")
+                            {
+                                savedEntry.DataProperties[
+                                    "BoneDetails_46_F00ED91D4FDF91F973A7DAAF8A291DBF"].SubProperties[
+                                    "PilotCount_2_65D06B7D492533AA2F8E9DA8254C5747"].Value = forcedSeating.ToString();
+                            }
+                            if (!includedEntries.Contains(tableEntry.Name.ToString()))
+                            {
+                                Console.WriteLine("Adding {0} to datatable...", tableEntry.Name.ToString());
+                                includedEntries.Add(tableEntry.Name.ToString());
+                                baseEntries.Add(tableEntry);
+                            }
+                            StructPropertyData currentAircraft = baseEntries.Find(x => x.Name == tableEntry.Name);
+                            foreach (PropertyData currentProp in currentAircraft.Value)
+                            {
+                                String propertyName = currentProp.Name.ToString();
+                                DataTableProperty currentProperty = savedEntry.DataProperties[propertyName];
+                                handleProperty(currentProp, baseAsset, currentProperty, savedEntry);
+                            }
                         }
                     }
+
+                
 
                 }
             }
             
-            String fileName = comboModDirect + Path.GetFileNameWithoutExtension(combineDatatable) + ".uasset";
-
+            String fileName = comboModDirect + "//" + Path.GetFileNameWithoutExtension(combineDatatable) + ".uasset";
             baseAsset.Write(fileName);
             UAsset dtRefresh = new UAsset(fileName, EngineVersion.VER_UE4_27);
             Console.WriteLine(dtRefresh.VerifyBinaryEquality());
