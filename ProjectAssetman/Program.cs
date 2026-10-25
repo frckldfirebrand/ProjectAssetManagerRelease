@@ -53,6 +53,8 @@ internal class Program
     {
         public PWMod() { }
         public String Name;
+        public String Author;
+        public List<String> Coauthors;
         public List<String>? ModFiles;
         public List<String>? ModDataTables;
         public List<String>? ModJSONs;
@@ -66,16 +68,19 @@ internal class Program
     class PWDataEntry
     {
         [JsonConstructor]
-        public PWDataEntry(String Name, Dictionary<String, String> DataAssets, Dictionary<String, DataTableProperty> DataProperties)
+        public PWDataEntry(String Name, Dictionary<String, String> DataAssets, Dictionary<String, DataTableProperty> DataProperties, Dictionary<String, String>? AssetPackages)
         {
             this.Name = Name;
             this.DataAssets = DataAssets;
             this.DataProperties = DataProperties;
+            this.AssetPackages = AssetPackages;
         }
         [JsonPropertyName("Name")]
         public String? Name { get; set; }
         [JsonPropertyName("DataAssets")]
         public Dictionary<String, String>? DataAssets { get; set; }
+        [JsonPropertyName("AssetPackages")]
+        public Dictionary<String, String>? AssetPackages { get; set; }
         [JsonPropertyName("DataProperties")]
         public Dictionary<String, DataTableProperty>? DataProperties { get; set; }
     }
@@ -151,7 +156,7 @@ internal class Program
         "AV-8_2",
     };
 
-    DataTableProperty SaveDataTableProperty(PropertyData propData, UAsset asset, Dictionary<String, String> importHolder)
+    DataTableProperty SaveDataTableProperty(PropertyData propData, UAsset asset, Dictionary<String, String> importHolder, Dictionary<String, String> assetPackages)
     {
         String propertyName = propData.Name.ToString();
         String propertyType = propData.PropertyType.ToString();
@@ -167,8 +172,11 @@ internal class Program
                 if (objValue.IsImport())
                 {
                     Import objImport = objValue.ToImport(asset);
-                    importHolder.Add(objValue.Name.ToString(), objImport.ObjectName.ToString());
-                    property.Tag = objImport.ObjectName.ToString();
+                    String objName = objImport.ObjectName.ToString();
+
+                    importHolder.Add(objValue.Name.ToString(), objName);
+                    if (!assetPackages.ContainsKey(objName)) assetPackages.Add(objName, objImport.OuterIndex.ToImport(asset).ObjectName.ToString());
+
                 }
                 property.Value = objValue.ToString();
                 
@@ -191,7 +199,7 @@ internal class Program
                     for (int i = 0; i < arrayProp.Value.Length; i++)
                     {
                         PropertyData subData = arrayProp.Value[i];
-                        subProperties.Add(subData.Name.ToString(), SaveDataTableProperty(subData, asset, importHolder));
+                        subProperties.Add(subData.Name.ToString(), SaveDataTableProperty(subData, asset, importHolder, assetPackages));
                     }
                     property.SubProperties = subProperties;
                 }
@@ -204,7 +212,7 @@ internal class Program
                     Dictionary<String, DataTableProperty> subProperties = new Dictionary<String, DataTableProperty>();
                     foreach (PropertyData subData in subDataList)
                     {
-                        subProperties.Add(subData.Name.ToString(), SaveDataTableProperty(subData, asset, importHolder));
+                        subProperties.Add(subData.Name.ToString(), SaveDataTableProperty(subData, asset, importHolder, assetPackages));
                     }
                     property.SubProperties = subProperties;
                 }
@@ -247,12 +255,13 @@ internal class Program
         String aircraftLoc = ProcessedFiles + "//" + subFolder + "//" + aircraftName;
         Dictionary<String, DataTableProperty> aircraftProps = new Dictionary<String, DataTableProperty>();
         Dictionary<String, String> aircraftAssets = new Dictionary<String, String>();
+        Dictionary<String, String> assetPackages = new Dictionary<String, String>();
         foreach (PropertyData propData in line.Value)
         {
-            aircraftProps.Add(propData.Name.ToString(), SaveDataTableProperty(propData, vanilla, aircraftAssets));
+            aircraftProps.Add(propData.Name.ToString(), SaveDataTableProperty(propData, vanilla, aircraftAssets, assetPackages));
         }
         Directory.CreateDirectory(Path.GetDirectoryName(aircraftLoc));
-        PWDataEntry aircraft = new PWDataEntry(aircraftName, aircraftAssets, aircraftProps);;
+        PWDataEntry aircraft = new PWDataEntry(aircraftName, aircraftAssets, aircraftProps, assetPackages);
         String aircraftJSON = JsonSerializer.Serialize(aircraft, SerializerOptions);
         File.WriteAllText(aircraftLoc + ".JSON", aircraftJSON);
     }
@@ -294,6 +303,9 @@ internal class Program
                 ModDataTables = new List<String>(),
                 ModJSONs = new List<String>()
             };
+            Console.WriteLine("Extracting files from {0}", thisPaksName);
+            Console.WriteLine("Who is the author of the mod {0}?", thisPaksName);
+            thisMod.Author = Console.ReadLine();
 
             if (!Directory.Exists(modJSONFolder)) Directory.CreateDirectory(modJSONFolder);
 
@@ -368,7 +380,13 @@ internal class Program
             case "ObjectProperty":
                 if (plane.DataAssets.ContainsKey(propertyName)) 
                 {
-                    Import import = asset.Imports.Find(x => x.ObjectName.ToString() == plane.DataAssets[propertyName]);
+                    String assetName = plane.DataAssets[propertyName];
+                    String outerName = plane.AssetPackages[assetName];
+
+                    Import import = asset.Imports.Find(x => x.ObjectName.ToString() == assetName);
+                    Import outerImport = asset.Imports.Find(x => x.ObjectName.ToString() == plane.AssetPackages[assetName]);
+                    
+                    import.OuterIndex = new FPackageIndex(asset.SearchForImport(outerImport.ObjectName));
                     property.SetObject(new FPackageIndex(asset.SearchForImport(import.ObjectName)));
                 }
                 break;
@@ -411,12 +429,29 @@ internal class Program
     {
         Console.WriteLine("What should this mod be called?");
         String combinedModname = Console.ReadLine();
-        String comboModDirect = createdModFolder + "//" + combinedModname;
+        String comboModDirect = Path.Combine(createdModFolder, combinedModname);
+        String comboModContent = Path.Combine(comboModDirect, "Content");
+
+        if (Directory.Exists(comboModDirect)) Directory.Delete(comboModContent, true);
+        if (Directory.Exists(comboModContent)) Directory.Delete(comboModContent, true);
+        
         Directory.CreateDirectory(comboModDirect);
+        Directory.CreateDirectory(comboModContent);
+
+        PWMod combinedMod = new PWMod 
+        { 
+            Name = combinedModname,
+            ModFiles = new List<String>(),
+            ModDataTables = new List<String>(),
+            ModJSONs = new List<String>(),
+            Author = "Current User",
+            Coauthors = new List<String>()
+        };
 
         List<String> modifiedDatatables = new List<String>();
         List<String> includedAircraft = new List<String>();
         List<String> includedMods = new List<String>();
+        List<String> combinedModAuthors = new List<String>();
 
         List<String> modDTPaths = new List<String>();
 
@@ -435,10 +470,21 @@ internal class Program
                 foreach (String dt in thisJson.ModDataTables)
                 {
                     if (!modifiedDatatables.Contains(dt)) modifiedDatatables.Add(dt);
-                    Console.WriteLine("  Getting paths for {0} at {1}",dt, Path.Combine(modDTFolder, modName));
+                    //Console.WriteLine("  Getting paths for {0} at {1}",dt, Path.Combine(modDTFolder, modName));
                     String[] paths = Directory.GetFiles(Path.Combine(modDTFolder, modName), "*.uasset", DefaultEnumeration);
-                    Console.WriteLine("  Found {0}", paths);
+                    //Console.WriteLine("  Found {0}", paths);
                     modDTPaths.AddRange(paths);
+                }
+                if (thisJson.Author != null) combinedMod.Coauthors.Add(thisJson.Author);
+                foreach (string asset in thisJson.ModFiles)
+                {
+                    combinedMod.ModFiles.Add(asset);
+                    String assetLoc = new DirectoryInfo(asset).ToString();
+                    //Console.WriteLine(assetLoc);
+                    String assetSaveLoc = Path.Combine(comboModContent, Path.GetDirectoryName(asset));
+                    Directory.CreateDirectory(assetSaveLoc);
+                    //Console.WriteLine(Path.Combine(modExtractedFiles, modName, asset));
+                    File.Copy(Path.Combine(modExtractedFiles, modName, asset), Path.Combine(comboModContent, assetLoc), true);
                 }
             }
         }
@@ -466,12 +512,16 @@ internal class Program
             else forcedSeating = "2";
         }
 
+        Console.WriteLine("Add any aircraft to DB_MF_Aircraft (used by Frontline 59?)");
+        String f59answer = Console.ReadLine().ToLower();
+
+
         foreach (String combineDatatable in modifiedDatatables)
         {
-            Console.WriteLine("Handling {0}...", combineDatatable);
+            //Console.WriteLine("Handling {0}...", combineDatatable);
 
             String baseAssetPath = Directory.GetFiles(vanillaDataFolder, combineDatatable, DefaultEnumeration)[0];
-            Console.WriteLine("Found vanilla asset at {0}", baseAssetPath);
+            //Console.WriteLine("Found vanilla asset at {0}", baseAssetPath);
 
             List<String> includedEntries = new List<String>();
             
@@ -496,7 +546,7 @@ internal class Program
                 if (paths != null && paths.Length > 0)
                 {
                     string dataTableEntry = paths[0];
-                    Console.WriteLine("Found {0}", dataTableEntry);
+                    //Console.WriteLine("Found {0}", dataTableEntry);
                     UAsset modDBAC = new UAsset(dataTableEntry, EngineVersion.VER_UE4_27);
 
                     DataTableExport moddedDataTable = modDBAC.Exports[0] as DataTableExport;
@@ -510,20 +560,22 @@ internal class Program
                     {
                         if (baseAsset.SearchForImport(import.ObjectName) == 0) baseAsset.AddImport(import);
                     }
+
+                    
                     foreach (StructPropertyData tableEntry in moddedEntries)
                     {
-                        Console.WriteLine("Found " + tableEntry.Name);
+                        //Console.WriteLine("Found " + tableEntry.Name);
                         String tableEntryFileLoc = ProcessedFiles + "\\" + modName + "\\" + combineDatatable + "\\" + tableEntry.Name + ".json";
-                        Console.WriteLine("Attempting to find" + tableEntryFileLoc);
+                        //Console.WriteLine("Attempting to find" + tableEntryFileLoc);
                         if (Path.Exists(tableEntryFileLoc))
                         {
-                            Console.WriteLine("Found " + tableEntryFileLoc);
+                            //Console.WriteLine("Found " + tableEntryFileLoc);
                             String savedEntryJson = File.ReadAllText(tableEntryFileLoc);
                             //Console.WriteLine(savedAircraftJson);
 
                             PWDataEntry savedEntry = JsonSerializer.Deserialize<PWDataEntry>(savedEntryJson, SerializerOptions);
 
-                            if (modifyPrez && combineDatatable == "DB_Aircraft")
+                            if (modifyPrez && combineDatatable == "DB_Aircraft.uasset")
                             {
                                 savedEntry.DataProperties[
                                     "BoneDetails_46_F00ED91D4FDF91F973A7DAAF8A291DBF"].SubProperties[
@@ -544,8 +596,16 @@ internal class Program
                             }
                         }
                     }
+                    foreach (Import import in baseAsset.Imports)
+                    {
+                        int objectNameInClassName = baseAsset.SearchForImport(import.ClassName);
+                        if (objectNameInClassName != 0)
+                        {
+                            Console.WriteLine(objectNameInClassName + " " + import.ClassName.ToString());
+                            import.OuterIndex = baseAsset.Imports[-objectNameInClassName - 1].OuterIndex;
+                        }
+                    }
 
-                
 
                 }
             }
@@ -555,6 +615,7 @@ internal class Program
             UAsset dtRefresh = new UAsset(fileName, EngineVersion.VER_UE4_27);
             Console.WriteLine(dtRefresh.VerifyBinaryEquality());
             dtRefresh.Write(fileName);
+
 
 
         }
