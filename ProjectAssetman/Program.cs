@@ -512,13 +512,34 @@ internal class Program
             else forcedSeating = "2";
         }
 
-        Console.WriteLine("Add any aircraft to DB_MF_Aircraft (used by Frontline 59?)");
-        String f59answer = Console.ReadLine().ToLower();
+        Console.WriteLine("Add any aircraft to DB_MF_Aircraft (used by Frontline 59?) [Y/N]");
+        String f59Answer = Console.ReadLine().ToLower();
+        bool addModsToF59 = false;
+        bool addVanillaToF59 = false;
+        if (f59Answer[0] == 'y') 
+        {
+            addModsToF59 = true;
+            Console.WriteLine("Also add vanilla aircraft to F59?");
+            String addVan = Console.ReadLine();
+            if (addVan[0] == 'y') addVanillaToF59 = true;
+        }
 
 
         foreach (String combineDatatable in modifiedDatatables)
         {
             //Console.WriteLine("Handling {0}...", combineDatatable);
+
+            UAsset f59DT = new UAsset();
+            String[] f59DTPath = Directory.GetFiles(vanillaFolder, "DB_MF_Aircraft.json", DefaultEnumeration);
+            DataTableExport f59DataTable = new DataTableExport();
+            List<StructPropertyData> f59Entries = new List<StructPropertyData>();
+
+            if (addModsToF59 && Path.GetFileName(combineDatatable) == "DB_Aircraft.json")
+            {
+                f59DT = new UAsset(f59DTPath[0], EngineVersion.VER_UE4_27);
+                f59DataTable = f59DT.Exports[0] as DataTableExport;
+                f59Entries = f59DataTable.Table.Data;
+            }
 
             String baseAssetPath = Directory.GetFiles(vanillaDataFolder, combineDatatable, DefaultEnumeration)[0];
             //Console.WriteLine("Found vanilla asset at {0}", baseAssetPath);
@@ -560,33 +581,42 @@ internal class Program
                     {
                         if (baseAsset.SearchForImport(import.ObjectName) == 0) baseAsset.AddImport(import);
                     }
-
                     
                     foreach (StructPropertyData tableEntry in moddedEntries)
                     {
-                        //Console.WriteLine("Found " + tableEntry.Name);
-                        String tableEntryFileLoc = ProcessedFiles + "\\" + modName + "\\" + combineDatatable + "\\" + tableEntry.Name + ".json";
+                        Console.WriteLine("Found " + tableEntry.Name);
+                        String tableEntryFileLoc = Path.Combine(ProcessedFiles, modName, combineDatatable, tableEntry.Name + ".json");
                         //Console.WriteLine("Attempting to find" + tableEntryFileLoc);
                         if (Path.Exists(tableEntryFileLoc))
                         {
-                            //Console.WriteLine("Found " + tableEntryFileLoc);
+                            Console.WriteLine("Found " + tableEntryFileLoc);
                             String savedEntryJson = File.ReadAllText(tableEntryFileLoc);
                             //Console.WriteLine(savedAircraftJson);
 
                             PWDataEntry savedEntry = JsonSerializer.Deserialize<PWDataEntry>(savedEntryJson, SerializerOptions);
 
-                            if (modifyPrez && combineDatatable == "DB_Aircraft.uasset")
+                            if (modifyPrez && Path.GetFileName(combineDatatable) == "DB_Aircraft.uasset")
                             {
                                 savedEntry.DataProperties[
                                     "BoneDetails_46_F00ED91D4FDF91F973A7DAAF8A291DBF"].SubProperties[
                                     "PilotCount_2_65D06B7D492533AA2F8E9DA8254C5747"].Value = forcedSeating.ToString();
                             }
+                            else Console.WriteLine("Not editing Prez for {0} at {1}", tableEntry.Name, combineDatatable);
                             if (!includedEntries.Contains(tableEntry.Name.ToString()))
                             {
                                 Console.WriteLine("Adding {0} to datatable...", tableEntry.Name.ToString());
                                 includedEntries.Add(tableEntry.Name.ToString());
                                 baseEntries.Add(tableEntry);
                             }
+
+                            if (addModsToF59)
+                            {
+                                if (addVanillaToF59)
+                                {
+
+                                }
+                            }
+
                             StructPropertyData currentAircraft = baseEntries.Find(x => x.Name == tableEntry.Name);
                             foreach (PropertyData currentProp in currentAircraft.Value)
                             {
@@ -601,7 +631,7 @@ internal class Program
                         int objectNameInClassName = baseAsset.SearchForImport(import.ClassName);
                         if (objectNameInClassName != 0)
                         {
-                            Console.WriteLine(objectNameInClassName + " " + import.ClassName.ToString());
+                            //Console.WriteLine(objectNameInClassName + " " + import.ClassName.ToString());
                             import.OuterIndex = baseAsset.Imports[-objectNameInClassName - 1].OuterIndex;
                         }
                     }
