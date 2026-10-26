@@ -871,6 +871,12 @@ internal class Program
         String[] excessDatatables = Directory.GetFiles(comboModDirect);
         foreach (String file in excessDatatables)
         {
+            if (Path.GetFileNameWithoutExtension(file) == "DB_MF_Aircraft")
+            {
+                String f59ModSpot = comboModDirect + "Content/ProjectWingman/Plugins/MagadanFront/Content/MagadanFront/Blueprints/Data/";
+                if (!Directory.Exists(f59ModSpot)) Directory.CreateDirectory(f59ModSpot);
+                File.Copy(file, f59ModSpot + Path.GetFileName(file), true);
+            }
             String[] array = Directory.GetFiles(comboModContent, Path.GetFileName(file), DefaultEnumeration);
             if (array != null && array.Length > 0)
             {
@@ -880,8 +886,25 @@ internal class Program
 
         }
 
-        //Process.Start("UnrealPak-With-Compression.bat", comboModContent);
+        String oldDirect = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(comboModDirect + "/Content");
 
+        using (FileStream stream = new FileStream("output_P.pak", FileMode.Create))
+        {
+            var builder = new PakBuilder();
+            var pak_writer = builder.Writer(stream);
+            String[] modFiles = Directory.GetFiles("ProjectWingman", "*", DefaultEnumeration);
+            foreach (String file in modFiles)
+            {
+                String fileFixed = file.Replace("\\", "/");
+                pak_writer.WriteFile(fileFixed, File.ReadAllBytes(file));
+            }
+
+
+            pak_writer.WriteIndex();
+        }
+        //Process.Start("UnrealPak-With-Compression.bat", comboModContent);
+        Directory.SetCurrentDirectory(oldDirect);
     }
 
     private static void Main(string[] args)
@@ -902,7 +925,7 @@ internal class Program
         if (!Directory.Exists(program.f59DataFolder)) Directory.CreateDirectory("Vanilla Files\\F59 Data");
         if (!Directory.Exists(program.createdModFolder)) Directory.CreateDirectory("Created Mods\\");
 
-        if(Directory.GetDirectories(program.vanillaDataFolder).Length < 2)
+        if(Directory.GetDirectories(program.vanillaFolder).Length < 2)
         {
             Console.WriteLine("Missing necessary vanilla Project Wingman files! Extract them now? [Y/N]");
             String grabVanilla = Console.ReadLine().ToLower();
