@@ -13,6 +13,11 @@ using UAssetAPI.PropertyTypes.Objects;
 using UAssetAPI.PropertyTypes.Structs;
 using UAssetAPI.UnrealTypes;
 
+using static PWMod;
+using static PWDataEntry;
+using static DataTableProperty;
+
+
 internal class Program
 {
     static JsonSerializerOptions SerializerOptions = new JsonSerializerOptions { WriteIndented = true, IncludeFields = true };
@@ -49,62 +54,8 @@ internal class Program
             }
         }
     }
-
-    class PWMod
-    {
-        public PWMod() { }
-        public String Name;
-        public String Author;
-        public List<String> Coauthors;
-        public List<String>? ModFiles;
-        public List<String>? ModDataTables;
-        public List<String>? ModJSONs;
-    }
-    class PWDataTable
-    {
-        public PWDataTable() { }
-        String Name;
-        List<PWDataEntry> DataEntries;
-    }
-    class PWDataEntry
-    {
-        public PWDataEntry() { }
-        [JsonConstructor]
-        public PWDataEntry(String Name, Dictionary<String, String> DataAssets, Dictionary<String, DataTableProperty> DataProperties, Dictionary<String, String>? AssetPackages)
-        {
-            this.Name = Name;
-            this.DataAssets = DataAssets;
-            this.DataProperties = DataProperties;
-            this.AssetPackages = AssetPackages;
-        }
-        [JsonPropertyName("Name")]
-        public String? Name { get; set; }
-        [JsonPropertyName("DataAssets")]
-        public Dictionary<String, String>? DataAssets { get; set; }
-        [JsonPropertyName("AssetPackages")]
-        public Dictionary<String, String>? AssetPackages { get; set; }
-        [JsonPropertyName("DataProperties")]
-        public Dictionary<String, DataTableProperty>? DataProperties { get; set; }
-    }
-
-    class DataTableProperty
-    {
-        public DataTableProperty() { }
-        public DataTableProperty(String 
-            name, String type,  String? value = null, Dictionary<String, DataTableProperty>? SubProperties = null, String? Tag = null)
-        {
-            Name = Name;
-            Type = Type;
-            if (Value != null) Value = value;
-            if (SubProperties != null) SubProperties = SubProperties;
-            if (Tag != null) Tag = Tag;
-        }
-        public String Name { get; set; }
-        public String Type { get; set; }
-        public String? Value { get; set; }
-        public Dictionary<String, DataTableProperty>? SubProperties { get; set; }
-        public String? Tag { get; set; }
-    }
+    
+    
 
     bool IsList(Object o)
     {
@@ -120,10 +71,8 @@ internal class Program
     String modDTFolder = "Mod DataTables\\";
     String modExtractedFiles = "Mod Extracted Files\\";
     String vanillaFolder = "Vanilla Files\\";
-    String PlaneClassFolder = "Plane Files\\";
     String vanillaDataFolder = "Vanilla Files\\Vanilla Data";
-    String vanillaDBACLoc = "Vanilla Files\\VanillaDBAC.uasset";
-    String vanillaHangarLoc = "Vanilla Files\\VanillaHangar.uasset";
+    String f59DataFolder = "Vanilla Files\\F59 Data";
     String createdModFolder = "Created Mods\\";
 
 
@@ -340,16 +289,8 @@ internal class Program
         }
     }
     
-    void refreshVanillaData(UAsset vanilla, UAsset hangar)
+    void refreshVanillaData()
     {
-        Console.WriteLine("Saving Serialized JSON Copy of Datatable...");
-        String jsonSerializedAsset = vanilla.SerializeJson(true);
-        File.WriteAllText(vanillaFolder + "vanillaDBAC.JSON", jsonSerializedAsset);
-        Console.WriteLine("Saving Serialized JSON Copy of Hangar Text Table...");
-        jsonSerializedAsset = hangar.SerializeJson(true);
-        File.WriteAllText(vanillaFolder + "vanillaHangar.JSON", jsonSerializedAsset);
-        Console.WriteLine("Exported full Asset as JSON");
-
         Console.WriteLine("Scanning Vanilla Database...");
 
         DatabaseExtract(vanillaDataFolder, false, true);
@@ -948,9 +889,78 @@ internal class Program
         Program program = new Program();
         bool managerContinue = true;
         Console.WriteLine("Project Assetmanager is away.");
-        UAsset vanillaDBAC = new UAsset(program.vanillaDBACLoc,EngineVersion.VER_UE4_27);
-        UAsset vanillaHangar = new UAsset(program.vanillaHangarLoc, EngineVersion.VER_UE4_27);
-        
+
+        Console.WriteLine("Checking for necessary directories...");
+
+        if (!Directory.Exists(program.ProcessedFiles)) Directory.CreateDirectory("Processed Files\\");
+        if (!Directory.Exists(program.modJSONFolder)) Directory.CreateDirectory("Mod JSONs\\");
+        if (!Directory.Exists(program.modPakFolder)) Directory.CreateDirectory("Mod Paks\\");
+        if (!Directory.Exists(program.modDTFolder)) Directory.CreateDirectory("Mod DataTables\\");
+        if (!Directory.Exists(program.modExtractedFiles)) Directory.CreateDirectory("Mod Extracted Files\\");
+        if (!Directory.Exists(program.vanillaFolder)) Directory.CreateDirectory("Vanilla Files\\");
+        if (!Directory.Exists(program.vanillaDataFolder)) Directory.CreateDirectory("Vanilla Files\\Vanilla Data");
+        if (!Directory.Exists(program.f59DataFolder)) Directory.CreateDirectory("Vanilla Files\\F59 Data");
+        if (!Directory.Exists(program.createdModFolder)) Directory.CreateDirectory("Created Mods\\");
+
+        if(Directory.GetDirectories(program.vanillaDataFolder).Length < 2)
+        {
+            Console.WriteLine("Missing necessary vanilla Project Wingman files! Extract them now? [Y/N]");
+            String grabVanilla = Console.ReadLine().ToLower();
+            switch (grabVanilla[0])
+            {
+                case 'y':
+                    Console.WriteLine("Please paste the Project Wingman\\ProjectWingman\\Content\\Paks folder here...");
+                    String pwAssetAddress = Console.ReadLine();
+                    String[] pwMainPaks = Directory.GetFiles(pwAssetAddress);
+
+                    Console.WriteLine("Found {0} paks!", pwMainPaks.Length);
+
+                    String ProjectWingmanDataPath = "Content/ProjectWingman/Blueprints/Data";
+                    String F59DataPath = "Plugins/MagadanFront/Content/MagadanFront/Blueprints/Data";
+
+                    Console.WriteLine(F59DataPath);
+                    Console.WriteLine(ProjectWingmanDataPath);
+
+                    foreach (String pak in pwMainPaks)
+                    {
+                        PakBuilder pakBuilder = new PakBuilder();
+                        FileStream pakFile = new FileStream(pak, FileMode.Open);
+                        PakReader pakReader = pakBuilder.Reader(pakFile);
+                        foreach (var file in pakReader.Files())
+                        {
+                            if (file.Contains(F59DataPath,StringComparison.InvariantCultureIgnoreCase))
+                            {
+                                String destString = Path.Combine(program.f59DataFolder, file.Substring(F59DataPath.Length).TrimStart(Path.DirectorySeparatorChar));
+
+                                byte[] pakBytes = pakReader.Get(pakFile, file);
+
+                                //Make sure we have somewhere to write to...
+                                Directory.CreateDirectory(Path.GetDirectoryName(destString));
+                                //Then write it!
+                                File.WriteAllBytes(destString, pakBytes);
+
+                            } else if (file.Contains(ProjectWingmanDataPath, StringComparison.InvariantCultureIgnoreCase))
+                            {
+                                String destString = Path.Combine(program.vanillaDataFolder, file.Substring(ProjectWingmanDataPath.Length).TrimStart(Path.DirectorySeparatorChar));
+
+                                byte[] pakBytes = pakReader.Get(pakFile, file);
+
+                                //Make sure we have somewhere to write to...
+                                Directory.CreateDirectory(Path.GetDirectoryName(destString));
+                                //Then write it!
+                                File.WriteAllBytes(destString, pakBytes);
+                            } 
+                        }
+                    }
+                    break;
+                case 'n':
+                default:
+                    Console.WriteLine("This program does not work without them. Now qutting PAM.");
+                    managerContinue = false;
+                    break;
+            }
+        }
+
         while (managerContinue)
         {
             Console.WriteLine
@@ -973,7 +983,7 @@ internal class Program
                 switch (managerChoice[0])
                 {
                     case 'r':
-                        program.refreshVanillaData(vanillaDBAC, vanillaHangar);
+                        program.refreshVanillaData();
                         break;
                     case 'e':
                         program.extractModPacks();
