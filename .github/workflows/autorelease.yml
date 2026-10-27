@@ -1,45 +1,110 @@
-name: .NET Core
+name: Generate Releases File
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  RELEASES_JSON_URL_BASE: https://raw.githubusercontent.com/canonical/dotnet-release-file-generator/refs/heads
 
 jobs:
-  build:
-
-    runs-on: windows-latest
-
+  build-releases-file-generator:
+    runs-on: ubuntu-latest
+    outputs:
+      releases: ${{ steps.generate-matrix.outputs.releases }}
     steps:
-    - uses: actions/checkout@v2
-    - name: Setup .NET Core
-      uses: actions/setup-dotnet@v1
-      with:
-        dotnet-version: 10.0.x
-    - name: Install dependencies
-      run: dotnet restore
-    - name: Build
-      run: dotnet publish -p:PublishSelfContained=true
-    - name: Zip the Build
-      run: tar.exe -a -c ${{ secrets.ReleaseZipName }} D:\a\ProjectAssetManagerRelease\ProjectAssetManagerRelease\ProjectAssetman\bin\Release\net10.0\win-x64\publish\
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.run_number }}
-        release_name: Release ${{ github.ref }}
-        body: New Release.
-        draft: false
-        prerelease: false
-    - name: Upload Release Asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
-        asset_path: ./${{ secrets.ReleaseZipName }}.zip
-        asset_name: ${{ secrets.ReleaseZipName }}.zip
-        asset_content_type: application/zip
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install .NET
+        run: |
+          sudo apt install --update --yes dotnet10
+
+      - name: Build Releases File Generator
+        run: |
+          dotnet publish src/ReleasesFileGenerator.Console/ReleasesFileGenerator.Console.csproj \
+            --configuration Release \
+            --runtime linux-x64 \
+            --self-contained \
+            --output ./dist \
+            --property:PublishSingleFile=true \
+            --property:DebugSymbols=false
+
+      - name: Upload Releases File Generator artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: releases-file-generator
+          path: ./dist
+
+      - name: Generate releases matrix
+        id: generate-matrix
+        run: |
+          releases_array=$(ls ./dist/Manifests | sed 's/\.[^.]*$//' | jq --raw-input . | jq --slurp --compact-output .)
+          echo "Generated releases matrix: ${releases_array}"
+          echo "releases=$releases_array" >> $GITHUB_OUTPUT
+
+  generate-releases-file:
+    needs: build-releases-file-generator
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        release: ${{ fromJson(needs.build-releases-file-generator.outputs.releases) }}
+      fail-fast: false
+    steps:
+      - name: Download Releases File Generator artifact
+        id: download-artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: releases-file-generator
+
+      - name: Generate releases file
+        id: generate-releases-file
+        env:
+          RELEASES_JSON_URL_ORIGIN: ${{ env.RELEASES_JSON_URL_BASE }}/release/${{ matrix.release }}
+        run: |
+          scratch_dir=$(mktemp -d)
+          chmod a+x ${{ steps.download-artifact.outputs.download-path }}/ReleasesFileGenerator.Console
+          tree -p ${{ steps.download-artifact.outputs.download-path }}
+          ${{ steps.download-artifact.outputs.download-path }}/ReleasesFileGenerator.Console ${{ matrix.release }} $scratch_dir
+          echo "scratch_dir=$scratch_dir" >> $GITHUB_OUTPUT
+
+      - name: Commit releases files
+        run: |
+          cd ${{ steps.generate-releases-file.outputs.scratch_dir }}
+          git init
+          git add -A
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git commit -m '${{ matrix.release }} releases file update'
+
+      - name: Push to GH Pages branch
+        uses: ad-m/github-push-action@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: release/${{ matrix.release }}
+          force: true
+          directory: ${{ steps.generate-releases-file.outputs.scratch_dir }}
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: [build-releases-file-generator, generate-releases-file]
+    if: always() && (needs.build-releases-file-generator.result == 'failure' || needs.generate-releases-file.result == 'failure')
+    steps:
+      - name: Notify Mattermost on failure
+        uses: mattermost/action-mattermost-notify@master
+        with:
+          MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
+          MATTERMOST_CHANNEL: dotnet-gha-triggers
+          TEXT: |
+            :x: **Generate Releases File Workflow Failed**
+
+            **Workflow:** ${{ github.workflow }}
+            **Repository:** ${{ github.repository }}
+            **Branch:** ${{ github.ref_name }}
+            **Triggered by:** ${{ github.actor }}
+            **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            **Job Status:**
+            - Build Releases File Generator: ${{ needs.build-releases-file-generator.result }}
+            - Generate Releases File: ${{ needs.generate-releases-file.result }}
