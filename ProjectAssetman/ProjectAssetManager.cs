@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using ProjectAssetman;
+using System.Collections;
 using System.Text.Json;
 using UAssetAPI;
 using UAssetAPI.ExportTypes;
@@ -6,67 +7,42 @@ using UAssetAPI.PropertyTypes.Objects;
 using UAssetAPI.PropertyTypes.Structs;
 using UAssetAPI.UnrealTypes;
 
+namespace ProjectAssetman;
 
-internal class Program
+internal class ProjectAssetManager
 {
+    UserSettings user = new UserSettings();
+    String UserSettingsFilePath = "UserSettings.json";
+    
     static JsonSerializerOptions SerializerOptions = new JsonSerializerOptions { WriteIndented = true, IncludeFields = true };
     static EnumerationOptions DefaultEnumeration = new EnumerationOptions { RecurseSubdirectories = true };
-    static void CopyDirectory(string sourceDir, string destinationDir, bool recursive)
+
+    Dictionary<String, String> coreFiles = new Dictionary<String, String>
     {
-        // Get information about the source directory
-        var dir = new DirectoryInfo(sourceDir);
+     {"ProcessedFiles" , "Processed Files\\" },
+     {"modJSONFolder" , "Mod JSONs\\"},
+     {"modPakFolder" , "Mod Paks\\"},
+     {"modDTFolder" , "Mod DataTables\\"},
+     {"modExtractedFiles" , "Mod Extracted Files\\"},
+     {"vanillaFolder" , "Vanilla Files\\"},
+     {"vanillaDataFolder" , "Vanilla Files\\Vanilla Data"},
+     {"f59DataFolder" , "Vanilla Files\\F59 Data"},
+     {"createdModFolder" , "Created Mods\\"},
+    };
 
-        // Check if the source directory exists
-        if (!dir.Exists)
-            throw new DirectoryNotFoundException($"Source directory not found: {dir.FullName}");
-
-        // Cache directories before we start copying
-        DirectoryInfo[] dirs = dir.GetDirectories();
-
-        // Create the destination directory
-        Directory.CreateDirectory(destinationDir);
-
-        // Get the files in the source directory and copy to the destination directory
-        foreach (FileInfo file in dir.GetFiles())
-        {
-            string targetFilePath = Path.Combine(destinationDir, file.Name);
-            file.CopyTo(targetFilePath);
-        }
-
-        // If recursive and copying subdirectories, recursively call this method
-        if (recursive)
-        {
-            foreach (DirectoryInfo subDir in dirs)
-            {
-                string newDestinationDir = Path.Combine(destinationDir, subDir.Name);
-                CopyDirectory(subDir.FullName, newDestinationDir, true);
-            }
-        }
-    }
-
-
-
-    bool IsList(Object o)
-    {
-        if (o == null) return false;
-        return o is IList &&
-               o.GetType().IsGenericType &&
-               o.GetType().GetGenericTypeDefinition().IsAssignableFrom(typeof(List<>));
-    }
-
-    String ProcessedFiles = "Processed Files\\";
-    String modJSONFolder = "Mod JSONs\\";
-    String modPakFolder = "Mod Paks\\";
-    String modDTFolder = "Mod DataTables\\";
-    String modExtractedFiles = "Mod Extracted Files\\";
-    String vanillaFolder = "Vanilla Files\\";
-    String vanillaDataFolder = "Vanilla Files\\Vanilla Data";
-    String f59DataFolder = "Vanilla Files\\F59 Data";
-    String createdModFolder = "Created Mods\\";
+    public String ProcessedFiles = "Processed Files\\";
+    public String modJSONFolder = "Mod JSONs\\";
+    public String modPakFolder = "Mod Paks\\";
+    public String modDTFolder = "Mod DataTables\\";
+    public String modExtractedFiles = "Mod Extracted Files\\";
+    public String vanillaFolder = "Vanilla Files\\";
+    public String vanillaDataFolder = "Vanilla Files\\Vanilla Data";
+    public String f59DataFolder = "Vanilla Files\\F59 Data";
+    public String createdModFolder = "Created Mods\\";
 
 
     //There's better ways to do this, such as reading from a file or something more dynamically; however, fuck you.
-    readonly List<String> vanillaAircraft = new List<String>
+    public static readonly List<String> vanillaAircraft = new List<String>
     {
         "Mig-15",
         "T-21",
@@ -179,7 +155,7 @@ internal class Program
                 break;
             case "StructProperty":
                 //Console.WriteLine("  Adding StructProperty...");
-                if (IsList(propValue))
+                if (HelperFunctions.IsList(propValue))
                 {
                     List<PropertyData> subDataList = propValue as List<PropertyData>;
                     Dictionary<String, DataTableProperty> subProperties = new Dictionary<String, DataTableProperty>();
@@ -356,6 +332,11 @@ internal class Program
             modJSONLoc = Path.Combine(modJSONLoc, "modInfoJson") + ".json";
             String modJSON = JsonSerializer.Serialize(thisMod, SerializerOptions);
             File.WriteAllText(modJSONLoc, modJSON);
+
+            if (user.AutomateDatabases)
+            {
+               DatabaseExtract(modDTFolder, false);
+            }
         }
     }
 
@@ -438,7 +419,7 @@ internal class Program
                 }
                 break;
             case "StructProperty":
-                if (IsList(propertyValue))
+                if (HelperFunctions.IsList(propertyValue))
                 {
                     List<PropertyData> subDataList = propertyValue as List<PropertyData>;
                     foreach (PropertyData subData in subDataList)
@@ -489,7 +470,7 @@ internal class Program
             ModFiles = new List<String>(),
             ModDataTables = new List<String>(),
             ModJSONs = new List<String>(),
-            Author = "Current User",
+            Author = user.UserID,
             Coauthors = new List<String>()
         };
 
@@ -512,9 +493,9 @@ internal class Program
 
         foreach (String mod in modJsons)
         {
-            Console.WriteLine("Load {0}?", mod);
-            String includeMod = Console.ReadLine().ToLower();
-            if (includeMod[0] == 'y')
+            Console.WriteLine();
+            char userInput = HelperFunctions.GetUserInput(new char[] { 'y', 'n' }, $"Load {mod}?");
+            if (userInput == 'y')
             {
                 String modJson = File.ReadAllText(mod);
                 PWMod thisJson = JsonSerializer.Deserialize<PWMod>(modJson, SerializerOptions);
@@ -556,27 +537,24 @@ internal class Program
             Console.WriteLine("  {0},", path);
         }
 
-        Console.WriteLine("Force Enable Prez in each plane? \n(D will disable Presz in all planes) [Y/N/D]");
-        String prezAnswer = Console.ReadLine().ToLower();
+        char prezAnswer = HelperFunctions.GetUserInput("YND".ToCharArray(), "Force Enable Prez in each plane? \n (D will disable Presz in all planes)");
         bool modifyPrez = false;
         String forcedSeating = "0";
-        if (prezAnswer[0] == 'd' || prezAnswer[0] == 'y')
+        if (prezAnswer == 'd' || prezAnswer == 'y')
         {
             modifyPrez = true;
-            if (prezAnswer[0] == 'd') forcedSeating = "1";
+            if (prezAnswer == 'd') forcedSeating = "1";
             else forcedSeating = "2";
         }
+        char f59Answer = HelperFunctions.GetUserInput("YN".ToCharArray(), "Add any aircraft to DB_MF_Aircraft (used by Frontline 59?)");
 
-        Console.WriteLine("Add any aircraft to DB_MF_Aircraft (used by Frontline 59?) [Y/N]");
-        String f59Answer = Console.ReadLine().ToLower();
         bool addModsToF59 = false;
         bool addVanillaToF59 = false;
-        if (f59Answer[0] == 'y')
+        if (f59Answer == 'y')
         {
             addModsToF59 = true;
-            Console.WriteLine("Also add vanilla aircraft to F59? [Y/N]");
-            String addVan = Console.ReadLine();
-            if (addVan[0] == 'y') addVanillaToF59 = true;
+            char addVan = HelperFunctions.GetUserInput("YN".ToCharArray(), "Also add vanilla aircraft to F59?");
+            if (addVan == 'y') addVanillaToF59 = true;
         }
 
 
@@ -910,8 +888,8 @@ internal class Program
 
         String oldDirect = Directory.GetCurrentDirectory();
         Directory.SetCurrentDirectory(comboModDirect + "/Content");
-
-        using (FileStream stream = new FileStream("output_P.pak", FileMode.Create))
+        String modPakName = combinedModname + "output_P.pak";
+        using (FileStream stream = new FileStream(modPakName, FileMode.Create))
         {
             var builder = new PakBuilder();
             var pak_writer = builder.Writer(stream);
@@ -926,123 +904,72 @@ internal class Program
             pak_writer.WriteIndex();
         }
         //Process.Start("UnrealPak-With-Compression.bat", comboModContent);
+        
+
+        if (user.AllowEditToPWFolders)
+        {
+            if (user.AutomaticallyDeploy)
+            {
+                File.Copy(modPakName, Path.Combine(user.ProjectWingmanPAMLocation, modPakName));
+            } else
+            {
+                char CanCopy = HelperFunctions.GetUserInput("YN".ToCharArray(), "Deploy PAK to ~PAM folder in Paks?");
+                if (CanCopy == 'y') File.Copy(modPakName, Path.Combine(user.ProjectWingmanPAMLocation, modPakName));
+            }
+        }
+        
+
         Directory.SetCurrentDirectory(oldDirect);
     }
 
     private static void Main(string[] args)
     {
-        Program program = new Program();
+        ProjectAssetManager program = new ProjectAssetManager();
         bool managerContinue = true;
         Console.WriteLine("Project Assetmanager is away.");
 
-        Console.WriteLine("Checking for necessary directories...");
-        bool firstRun = false;
-        if (!Directory.Exists(program.ProcessedFiles)) { firstRun = true; Directory.CreateDirectory("Processed Files\\"); }
-        if (!Directory.Exists(program.modJSONFolder)) { firstRun = true; Directory.CreateDirectory("Mod JSONs\\"); }
-        if (!Directory.Exists(program.modPakFolder)) { firstRun = true; Directory.CreateDirectory("Mod Paks\\"); }
-        if (!Directory.Exists(program.modDTFolder)) { firstRun = true; Directory.CreateDirectory("Mod DataTables\\"); }
-        if (!Directory.Exists(program.modExtractedFiles)) { firstRun = true; Directory.CreateDirectory("Mod Extracted Files\\"); }
-        if (!Directory.Exists(program.vanillaFolder)) { firstRun = true; Directory.CreateDirectory("Vanilla Files\\"); }
-        if (!Directory.Exists(program.vanillaDataFolder)) { firstRun = true; Directory.CreateDirectory("Vanilla Files\\Vanilla Data"); }
-        if (!Directory.Exists(program.f59DataFolder)) { firstRun = true; Directory.CreateDirectory("Vanilla Files\\F59 Data"); }
-        if (!Directory.Exists(program.createdModFolder)) { firstRun = true; Directory.CreateDirectory("Created Mods\\"); }
-
-        if (Directory.GetDirectories(program.vanillaFolder).Length < 2 || firstRun)
+        Console.WriteLine("Checking for necessary directories and user preferences...");
+        
+        program.user.userStartup(program.coreFiles);
+        if (!File.Exists(program.UserSettingsFilePath))
         {
-            Console.WriteLine("Missing necessary vanilla Project Wingman files! Extract them now? [Y/N]");
-            String grabVanilla = Console.ReadLine().ToLower();
-            switch (grabVanilla[0])
-            {
-                case 'y':
-                    Console.WriteLine("Please paste the Project Wingman\\ProjectWingman\\Content\\Paks folder here...");
-                    String pwAssetAddress = Console.ReadLine();
-                    String[] pwMainPaks = Directory.GetFiles(pwAssetAddress);
-
-                    Console.WriteLine("Found {0} paks!", pwMainPaks.Length);
-
-                    String ProjectWingmanDataPath = "Content/ProjectWingman/Blueprints/Data";
-                    String F59DataPath = "Plugins/MagadanFront/Content/MagadanFront/Blueprints/Data";
-
-                    Console.WriteLine(F59DataPath);
-                    Console.WriteLine(ProjectWingmanDataPath);
-
-                    foreach (String pak in pwMainPaks)
-                    {
-                        PakBuilder pakBuilder = new PakBuilder();
-                        FileStream pakFile = new FileStream(pak, FileMode.Open);
-                        PakReader pakReader = pakBuilder.Reader(pakFile);
-                        foreach (var file in pakReader.Files())
-                        {
-                            if (file.Contains(F59DataPath, StringComparison.InvariantCultureIgnoreCase))
-                            {
-                                String destString = Path.Combine(program.f59DataFolder, file.Substring(F59DataPath.Length).TrimStart(Path.DirectorySeparatorChar));
-
-                                byte[] pakBytes = pakReader.Get(pakFile, file);
-
-                                //Make sure we have somewhere to write to...
-                                Directory.CreateDirectory(Path.GetDirectoryName(destString));
-                                //Then write it!
-                                File.WriteAllBytes(destString, pakBytes);
-
-                            }
-                            else if (file.Contains(ProjectWingmanDataPath, StringComparison.InvariantCultureIgnoreCase))
-                            {
-                                String destString = Path.Combine(program.vanillaDataFolder, file.Substring(ProjectWingmanDataPath.Length).TrimStart(Path.DirectorySeparatorChar));
-
-                                byte[] pakBytes = pakReader.Get(pakFile, file);
-
-                                //Make sure we have somewhere to write to...
-                                Directory.CreateDirectory(Path.GetDirectoryName(destString));
-                                //Then write it!
-                                File.WriteAllBytes(destString, pakBytes);
-                            }
-                        }
-                    }
-                    break;
-                case 'n':
-                default:
-                    Console.WriteLine("This program does not work without them. Now qutting PAM.");
-                    managerContinue = false;
-                    break;
-            }
+            Console.WriteLine("User settings not found! Initializing first time user setup...");
+            program.user.userSetup(program.coreFiles);
+            File.WriteAllText(program.UserSettingsFilePath, JsonSerializer.Serialize(program.user));
         }
+        else program.user = JsonSerializer.Deserialize<UserSettings>(File.ReadAllText(program.UserSettingsFilePath));
+        
 
         while (managerContinue)
         {
-            Console.WriteLine
-                (
+            String managerPrompt = "Enter [P] to Edit your User Preferences\n" +
                 "Enter [R] to Refresh Vanilla Files (needed first time)\n" +
-                "Enter [E] to Extract Mod Paks. \n" +
-                "Enter [B] to Build Individual Databases from Modded DB_Aircraft's\n" +
+                "Enter [E] to Extract Mod Paks (needed before building databases) \n" +
+                "Enter [B] to Build Individual Databases from Mods (needed before combining mods)\n" +
                 "Enter [C] to Create a Combined Mod\n" +
-                "Enter [Q] to Quit.\n"
-                );
-            string managerChoice = Console.ReadLine();
-            if (managerChoice is null)
-            {
-                Console.WriteLine("Null! Null! Null!");
-                managerContinue = false;
-            }
-            else
-            {
-                managerChoice = managerChoice.ToLower();
-                switch (managerChoice[0])
+                "Enter [Q] to Quit.\n";
+            Char managerChoice = HelperFunctions.GetUserInput("PREBCQ".ToCharArray(), managerPrompt);
+                switch (managerChoice)
                 {
-                    case 'r':
+                case 'p':
+                    program.user.userSetup(program.coreFiles);
+                    File.WriteAllText(program.UserSettingsFilePath, JsonSerializer.Serialize(program.user, SerializerOptions));
+                    break;
+                case 'r':
                         program.refreshVanillaData();
                         break;
                     case 'e':
                         program.extractModPacks();
                         break;
                     case 'b':
-                        Console.WriteLine("Skip Vanilla Playable Aircraft?\n" +
+                        String skipPrompt = ("Skip Vanilla Playable Aircraft?\n" +
                             "Skipping Vanilla Playable Aircraft will make processing the Datatables in the future faster.\n" +
                             "This comes at the cost, of course, of not including their information\n" +
                             "(in case the extracted mods altered them at all)\n\n" +
-                            "On most modern PCs, however, the time saved is likely negligible.\n\n" +
-                            "[Y/N]");
-                        string skipChoice = Console.ReadLine();
-                        switch (skipChoice[0])
+                            "On most modern PCs, however, the time saved is likely negligible.\n\n");
+
+                        char skipChoice = HelperFunctions.GetUserInput("YN".ToCharArray(), skipPrompt);
+                        switch (skipChoice)
                         {
                             case 'y':
                                 program.DatabaseExtract(program.modDTFolder, true);
@@ -1061,7 +988,7 @@ internal class Program
                     default:
                         Console.WriteLine("Invalid entry!");
                         break;
-                }
+                
             }
         }
     }
