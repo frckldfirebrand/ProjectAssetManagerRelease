@@ -111,22 +111,23 @@ internal class Program
 
     bool CompareDataTableProperty(DataTableProperty prop1, DataTableProperty prop2)
     {
-        if (prop1.Name.Equals(prop2.Name)) { return true; }
-        if (prop1.Tag.Equals(prop2.Tag)) { return true; }
-        if (prop1.Value.Equals(prop2.Value)) { return true; }
-        if (prop1.Type.Equals(prop2.Type)) { return true; }
-        if (prop1.SubProperties != null && prop2.SubProperties == null) { return true; }
-        if (prop1.SubProperties == null && prop2.SubProperties != null) { return true; }
+        if (!prop1.Name.Equals(prop2.Name)) { return false; }
+        if (!prop1.Tag.Equals(prop2.Tag)) { return false; }
+        if (!prop1.Value.Equals(prop2.Value)) { return false; }
+        if (!prop1.Type.Equals(prop2.Type)) { return false; }
+        if (prop1.SubProperties != null && prop2.SubProperties == null) { return false; }
+        if (prop1.SubProperties == null && prop2.SubProperties != null) { return false; }
         if (prop1.SubProperties != null && prop2.SubProperties != null)
         {
-            if (prop1.SubProperties.Count != prop2.SubProperties.Count) { return true; }
+            if (prop1.SubProperties.Count != prop2.SubProperties.Count) { return false; }
             for (int i = 0; i < prop1.SubProperties.Count; i++)
             {
-                if (CompareDataTableProperty(prop1.SubProperties.ElementAt(i).Value, prop2.SubProperties.ElementAt(i).Value)) { return true; }
+                String subProp = prop1.SubProperties.ElementAt(i).Key;
+                if (!CompareDataTableProperty(prop1.SubProperties[subProp], prop2.SubProperties[subProp])) { return false; }
             }
         }
 
-        return false;
+        return true;
     }
     DataTableProperty SaveDataTableProperty(PropertyData propData, UAsset asset, Dictionary<String, String> importHolder, Dictionary<String, String> assetPackages)
     {
@@ -210,12 +211,12 @@ internal class Program
             {
                 //Using the name of the row of stats, we can get a name to use for the aircraft
                 String aircraftName = line.Name.ToString();
-                Console.WriteLine("Found " + aircraftName + "...");
+                Console.WriteLine("  Found " + aircraftName + "...");
                 if (skipVanilla)
                 {
                     if (!vanillaAircraft.Contains(aircraftName))
                     { WriteAircraftJSON(asset, subFolder, line, aircraftName, isVanilla); }
-                    else Console.WriteLine("Found Vanilla Aircraft.");
+                    else Console.WriteLine("  Found Vanilla Aircraft.");
                 }
                 else WriteAircraftJSON(asset, subFolder, line, aircraftName, isVanilla);
             }
@@ -224,8 +225,6 @@ internal class Program
 
     private void WriteAircraftJSON(UAsset asset, string subFolder, StructPropertyData line, string aircraftName, bool isVanilla = false)
     {
-        //Where we'll save the individual aircraft Json
-        Console.WriteLine(aircraftName);
 
         String[] vanillaPath = new string[0];
         String[] pathToVanillaFile = new string[0];
@@ -236,12 +235,16 @@ internal class Program
         {
             pathToVanillaFile = Directory.GetDirectories(Path.Combine(ProcessedFiles, "Vanilla"), Path.GetFileName(asset.FilePath), DefaultEnumeration);
             vanillaPath = Directory.GetFiles(pathToVanillaFile[0], aircraftName + ".json", DefaultEnumeration);
-            if (vanillaPath.Length != 0) isVanillaEntry = true;
+            if (vanillaPath.Length != 0)
+            {
+                isVanillaEntry = true;
+                Console.WriteLine("  Comparing this to {0}...", vanillaPath[0]);
+            }
         }
 
+        Console.WriteLine("  {0}: Vanilla Entry?: {1}", aircraftName, isVanillaEntry);
 
-        Console.WriteLine("{0}: Vanilla Entry?: {1}", aircraftName, isVanillaEntry);
-
+        //Where we'll save the individual aircraft Json
         String aircraftLoc = ProcessedFiles + "\\" + subFolder + "\\" + aircraftName;
 
         bool isIdenticalToVanilla = true;
@@ -249,7 +252,6 @@ internal class Program
         if (!isVanilla && isVanillaEntry)
         {
             String vanillaString = File.ReadAllText(vanillaPath[0]);
-
             vanillaEntry = JsonSerializer.Deserialize<PWDataEntry>(vanillaString, SerializerOptions);
         }
         else isIdenticalToVanilla = false;
@@ -282,6 +284,7 @@ internal class Program
             String aircraftJSON = JsonSerializer.Serialize(aircraft, SerializerOptions);
             File.WriteAllText(aircraftLoc + ".JSON", aircraftJSON);
         }
+        else Console.WriteLine("  Entry {0} was found to be identical to vanilla! Skipping...", aircraftName);
     }
 
 
@@ -291,8 +294,6 @@ internal class Program
         Directory.CreateDirectory(Path.Combine(ProcessedFiles, "Vanilla"));
 
         Console.WriteLine("Scanning Vanilla Database...");
-
-
 
         DatabaseExtract(vanillaDataFolder, false, true);
 
@@ -386,9 +387,11 @@ internal class Program
         String[] dataFolders = Directory.GetDirectories(directory);
         foreach (String dataFolder in dataFolders)
         {
+            Console.WriteLine("Working on Datatables in the Folder {0}", dataFolder);
             String[] dataTables = Directory.GetFiles(dataFolder, "*.uasset", DefaultEnumeration);
             foreach (String dataTable in dataTables)
             {
+                Console.WriteLine(" Now scanning Data Table: {0}", dataTable);
                 String fileSavePath;
                 if (isVanilla) fileSavePath = Path.Combine("Vanilla", Path.GetFileName(dataFolder), Path.GetFileName(dataTable));
                 else fileSavePath = Path.GetFileName(dataFolder) + "\\" + Path.GetFileName(dataTable);

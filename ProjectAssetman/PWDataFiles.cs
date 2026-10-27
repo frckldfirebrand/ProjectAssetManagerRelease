@@ -28,7 +28,14 @@ class PWDataEntry
 }
 class DataTableProperty
 {
-    public DataTableProperty() { }
+    public DataTableProperty() 
+    {
+        Name = "";
+        Type = "";
+        Value = "";
+        SubProperties = new Dictionary<String, DataTableProperty>();
+        Tag = "";
+    }
     public DataTableProperty(String
         name, String type, String? value = null, Dictionary<String, DataTableProperty>? SubProperties = null, String? Tag = null)
     {
