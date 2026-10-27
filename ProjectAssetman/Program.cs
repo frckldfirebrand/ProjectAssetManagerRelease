@@ -389,7 +389,7 @@ internal class Program
                 String fileSavePath;
                 if (isVanilla) fileSavePath = Path.Combine("Vanilla", Path.GetFileName(dataFolder), Path.GetFileName(dataTable));
                 else fileSavePath = Path.GetFileName(dataFolder) + "\\" + Path.GetFileName(dataTable);
-                Directory.CreateDirectory(fileSavePath);
+                //Directory.CreateDirectory(fileSavePath);
                 UAsset dB = new UAsset(dataTable, EngineVersion.VER_UE4_27);
                 CreateJSONsFromDatabase(dB, skipVanilla, fileSavePath, isVanilla);
             }
