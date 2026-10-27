@@ -12,10 +12,9 @@ using UAssetAPI.ExportTypes;
 using UAssetAPI.PropertyTypes.Objects;
 using UAssetAPI.PropertyTypes.Structs;
 using UAssetAPI.UnrealTypes;
-
-using static PWMod;
-using static PWDataEntry;
 using static DataTableProperty;
+using static PWDataEntry;
+using static PWMod;
 
 
 internal class Program
@@ -237,12 +236,17 @@ internal class Program
         //Where we'll save the individual aircraft Json
         Console.WriteLine(aircraftName);
 
-        String[] pathToVanillaFile = Directory.GetDirectories(Path.Combine(ProcessedFiles, "Vanilla"), Path.GetFileName(asset.FilePath), DefaultEnumeration);
-        String[] vanillaPath = Directory.GetFiles(pathToVanillaFile[0], aircraftName + ".json", DefaultEnumeration);
+        String[] vanillaPath = new string[0];
+        String[] pathToVanillaFile = new string[0];
 
         bool isVanillaEntry = false;
 
-        if (vanillaPath.Length != 0) isVanillaEntry = true;
+        if (!isVanilla)
+        {
+            pathToVanillaFile = Directory.GetDirectories(Path.Combine(ProcessedFiles, "Vanilla"), Path.GetFileName(asset.FilePath), DefaultEnumeration);
+            vanillaPath = Directory.GetFiles(pathToVanillaFile[0], aircraftName + ".json", DefaultEnumeration);
+            if (vanillaPath.Length != 0) isVanillaEntry = true;
+        }
 
 
         Console.WriteLine("{0}: Vanilla Entry?: {1}", aircraftName, isVanillaEntry);
@@ -261,14 +265,14 @@ internal class Program
         Dictionary<String, DataTableProperty> aircraftProps = new Dictionary<String, DataTableProperty>();
         Dictionary<String, String> aircraftAssets = new Dictionary<String, String>();
         Dictionary<String, String> assetPackages = new Dictionary<String, String>();
-        
+
         foreach (PropertyData propData in line.Value)
         {
             DataTableProperty currProp = SaveDataTableProperty(propData, asset, aircraftAssets, assetPackages);
             if (isVanilla || !isVanillaEntry)
             {
                 aircraftProps.Add(propData.Name.ToString(), currProp);
-            } 
+            }
             else
             {
                 DataTableProperty vannProp = vanillaEntry.DataProperties[propData.Name.ToString()];
@@ -279,7 +283,7 @@ internal class Program
                 }
             }
         }
-        
+
         if (!isIdenticalToVanilla)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(aircraftLoc));
@@ -289,9 +293,15 @@ internal class Program
         }
     }
     
+    
     void refreshVanillaData()
     {
+        Console.WriteLine("Creating Vanilla Processed Files Directory...");
+        Directory.CreateDirectory(Path.Combine(ProcessedFiles, "Vanilla"));
+        
         Console.WriteLine("Scanning Vanilla Database...");
+
+
 
         DatabaseExtract(vanillaDataFolder, false, true);
 
@@ -377,8 +387,9 @@ internal class Program
             foreach (String dataTable in dataTables)
             {
                 String fileSavePath;
-                if (isVanilla) fileSavePath = "Vanilla\\" + Path.GetFileName(dataFolder) + "\\" + Path.GetFileName(dataTable);
+                if (isVanilla) fileSavePath = Path.Combine("Vanilla", Path.GetFileName(dataFolder), Path.GetFileName(dataTable));
                 else fileSavePath = Path.GetFileName(dataFolder) + "\\" + Path.GetFileName(dataTable);
+                Directory.CreateDirectory(fileSavePath);
                 UAsset dB = new UAsset(dataTable, EngineVersion.VER_UE4_27);
                 CreateJSONsFromDatabase(dB, skipVanilla, fileSavePath, isVanilla);
             }
