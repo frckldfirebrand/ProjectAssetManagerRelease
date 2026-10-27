@@ -23,6 +23,7 @@ jobs:
       run: dotnet publish -p:PublishSelfContained=true
     - name: Zip the Build
       run: tar.exe -a -c ${{ secrets.ReleaseZipName }} D:\a\ProjectAssetManagerRelease\ProjectAssetManagerRelease\ProjectAssetman\bin\Release\net10.0\win-x64\publish\
+    - name: Create Release
       id: create_release
       uses: actions/create-release@v1
       env:
