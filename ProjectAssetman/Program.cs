@@ -914,25 +914,29 @@ internal class Program
         Console.WriteLine("Project Assetmanager is away.");
 
         Console.WriteLine("Checking for necessary directories...");
+        bool firstRun = false;
+        if (!Directory.Exists(program.ProcessedFiles)) { firstRun = true; Directory.CreateDirectory("Processed Files\\"); }
+        if (!Directory.Exists(program.modJSONFolder)) { firstRun = true; Directory.CreateDirectory("Mod JSONs\\"); }
+        if (!Directory.Exists(program.modPakFolder)) { firstRun = true; Directory.CreateDirectory("Mod Paks\\"); }
+        if (!Directory.Exists(program.modDTFolder)) { firstRun = true; Directory.CreateDirectory("Mod DataTables\\"); }
+        if (!Directory.Exists(program.modExtractedFiles)) { firstRun = true; Directory.CreateDirectory("Mod Extracted Files\\"); }
+        if (!Directory.Exists(program.vanillaFolder)) { firstRun = true; Directory.CreateDirectory("Vanilla Files\\"); }
+        if (!Directory.Exists(program.vanillaDataFolder)) { firstRun = true; Directory.CreateDirectory("Vanilla Files\\Vanilla Data"); }
+        if (!Directory.Exists(program.f59DataFolder)) { firstRun = true; Directory.CreateDirectory("Vanilla Files\\F59 Data"); }
+        if (!Directory.Exists(program.createdModFolder)) { firstRun = true; Directory.CreateDirectory("Created Mods\\"); }
 
-        if (!Directory.Exists(program.ProcessedFiles)) Directory.CreateDirectory("Processed Files\\");
-        if (!Directory.Exists(program.modJSONFolder)) Directory.CreateDirectory("Mod JSONs\\");
-        if (!Directory.Exists(program.modPakFolder)) Directory.CreateDirectory("Mod Paks\\");
-        if (!Directory.Exists(program.modDTFolder)) Directory.CreateDirectory("Mod DataTables\\");
-        if (!Directory.Exists(program.modExtractedFiles)) Directory.CreateDirectory("Mod Extracted Files\\");
-        if (!Directory.Exists(program.vanillaFolder)) Directory.CreateDirectory("Vanilla Files\\");
-        if (!Directory.Exists(program.vanillaDataFolder)) Directory.CreateDirectory("Vanilla Files\\Vanilla Data");
-        if (!Directory.Exists(program.f59DataFolder)) Directory.CreateDirectory("Vanilla Files\\F59 Data");
-        if (!Directory.Exists(program.createdModFolder)) Directory.CreateDirectory("Created Mods\\");
+        if (Directory.GetDirectories(program.vanillaFolder).Length < 2) { firstRun = true; }
+        else if (Directory.GetFiles(program.vanillaFolder, "*.uasset", DefaultEnumeration).Length == 0) { firstRun = true; }
 
-        if(Directory.GetDirectories(program.vanillaFolder).Length < 2)
+        if (firstRun)
         {
             Console.WriteLine("Missing necessary vanilla Project Wingman files! Extract them now? [Y/N]");
             String grabVanilla = Console.ReadLine().ToLower();
             switch (grabVanilla[0])
             {
                 case 'y':
-                    Console.WriteLine("Please paste the Project Wingman\\ProjectWingman\\Content\\Paks folder here...");
+                    Console.WriteLine("Please paste the Project Wingman\\ProjectWingman\\Content\\Paks folder path here here... \n" +
+                        "(That is to say, your entry should look like F:\\SteamLibrary\\steamapps\\common\\Project Wingman\\ProjectWingman\\Content\\Paks for example)");
                     String pwAssetAddress = Console.ReadLine();
                     String[] pwMainPaks = Directory.GetFiles(pwAssetAddress);
 
