@@ -9,7 +9,7 @@ on:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
     - uses: actions/checkout@v2
@@ -22,7 +22,7 @@ jobs:
     - name: Build
       run: dotnet publish -p:PublishSelfContained=true
     - name: Zip the Build
-      run: zip -r ${{ secrets.ReleaseZipName }} .ProjectAssetManagerRelease/ProjectAssetman/bin/Release/net10.0/publish/
+      run: zip -r ${{ secrets.ReleaseZipName }} ./ProjectAssetManagerRelease/ProjectAssetman/bin/Release/net10.0/publish/
     - name: Create Release
       id: create_release
       uses: actions/create-release@v1
