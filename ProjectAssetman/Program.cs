@@ -375,7 +375,11 @@ internal class Program
             String[] DataTables = Directory.GetFiles(DataFolder, "*.*", DefaultEnumeration);
             foreach (String DataTable in DataTables)
             {
-                mod.ModDataTables.Add(Path.GetFileName(DataTable));
+                String thisDataTablesName = Path.GetFileNameWithoutExtension(DataTable);
+                if ((Path.GetExtension(thisDataTablesName) == string.Empty))
+                {
+                    if (!mod.ModDataTables.Contains(thisDataTablesName + ".uasset")) mod.ModDataTables.Add(thisDataTablesName + ".uasset");
+                }
                 File.Copy(DataTable, Path.Combine(modDTDirectory, Path.GetFileName(DataTable)), true);
             }
         }
