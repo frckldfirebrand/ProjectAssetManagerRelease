@@ -1,20 +1,10 @@
 ﻿using System.Collections;
-using System.ComponentModel;
-using System.Data;
-using System.Diagnostics;
-using System.Diagnostics.Metrics;
-using System.Reflection;
-using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using UAssetAPI;
 using UAssetAPI.ExportTypes;
 using UAssetAPI.PropertyTypes.Objects;
 using UAssetAPI.PropertyTypes.Structs;
 using UAssetAPI.UnrealTypes;
-using static DataTableProperty;
-using static PWDataEntry;
-using static PWMod;
 
 
 internal class Program
@@ -53,8 +43,8 @@ internal class Program
             }
         }
     }
-    
-    
+
+
 
     bool IsList(Object o)
     {
@@ -161,15 +151,15 @@ internal class Program
 
                 }
                 property.Value = objValue.ToString();
-                
+
                 break;
             case "TextProperty":
                 //Console.WriteLine("  Adding TextProperty...");
                 TextPropertyData textProp = (TextPropertyData)propData;
                 property.Value = textProp.ToString();
-                if (textProp.CultureInvariantString != null) 
-                { 
-                    property.Tag = textProp.CultureInvariantString.ToString(); 
+                if (textProp.CultureInvariantString != null)
+                {
+                    property.Tag = textProp.CultureInvariantString.ToString();
                 }
                 break;
             case "ArrayProperty":
@@ -224,7 +214,8 @@ internal class Program
                 if (skipVanilla)
                 {
                     if (!vanillaAircraft.Contains(aircraftName))
-                    { WriteAircraftJSON(asset, subFolder, line, aircraftName, isVanilla); } else Console.WriteLine("Found Vanilla Aircraft.");
+                    { WriteAircraftJSON(asset, subFolder, line, aircraftName, isVanilla); }
+                    else Console.WriteLine("Found Vanilla Aircraft.");
                 }
                 else WriteAircraftJSON(asset, subFolder, line, aircraftName, isVanilla);
             }
@@ -292,13 +283,13 @@ internal class Program
             File.WriteAllText(aircraftLoc + ".JSON", aircraftJSON);
         }
     }
-    
-    
+
+
     void refreshVanillaData()
     {
         Console.WriteLine("Creating Vanilla Processed Files Directory...");
         Directory.CreateDirectory(Path.Combine(ProcessedFiles, "Vanilla"));
-        
+
         Console.WriteLine("Scanning Vanilla Database...");
 
 
@@ -311,7 +302,7 @@ internal class Program
     {
         //This gets us every file in the folder where we put our Paks.
         String[] pakNames = Directory.GetFiles(modPakFolder, "*.pak");
-        
+
         //Iterate over each String
         foreach (String pakName in pakNames)
         {
@@ -334,19 +325,13 @@ internal class Program
 
             if (!Directory.Exists(modJSONFolder)) Directory.CreateDirectory(modJSONFolder);
 
-            String modDTDirectory = modDTFolder + "\\" + Path.GetFileNameWithoutExtension(pakName) + "\\Data\\";
-
-            //Delete the modDTFolder first.
-            if (Directory.Exists(modDTDirectory))
-                Directory.Delete(modDTDirectory, true);
-
             //Then we want to scan each file in the pak.
             foreach (var file in pakReader.Files())
             {
                 //Log the file for sanity.
                 Console.WriteLine($"File: {file}");
                 //Set an export location in the same structure as it was found in the file, but sorted.
-                String fileLocation = modExtractedFiles + thisPaksName + "\\" + file;
+                String fileLocation = Path.Combine(modExtractedFiles, thisPaksName, file);
                 //Remember: a file in a pak is just a bunch of bytes, and the Pakreader gets us that information as it would be extracted. Neat!
                 byte[] pakBytes = pakReader.Get(pakFile, file);
 
@@ -357,18 +342,13 @@ internal class Program
                 thisMod.ModFiles.Add(file);
             }
             //Now recreate the DT Directory
-            Directory.CreateDirectory(modDTFolder + "\\" + Path.GetFileNameWithoutExtension(pakName) + "\\");
+            Directory.CreateDirectory(Path.Combine(modDTFolder, thisPaksName));
 
-            String ModDataDirectory = modExtractedFiles + thisPaksName + "\\ProjectWingman\\Content\\ProjectWingman\\Blueprints\\Data";
+            String modFilesDirectory = Path.Combine(modExtractedFiles, thisPaksName);
 
-            if (Path.Exists(ModDataDirectory))
-            {
-                foreach(String dtFile in Directory.GetFiles(ModDataDirectory, "*.uasset", DefaultEnumeration))
-                {
-                    thisMod.ModDataTables.Add(Path.GetFileName(dtFile));
-                }
-                CopyDirectory(ModDataDirectory, modDTDirectory, true);
-            }
+            CopyDataFromMod(modFilesDirectory, thisMod);
+
+
             String modJSONLoc = Path.Combine(modJSONFolder, thisPaksName);
             if (Directory.Exists(modJSONLoc)) { Directory.Delete(modJSONLoc, true); }
             Directory.CreateDirectory(modJSONLoc);
@@ -377,6 +357,29 @@ internal class Program
             File.WriteAllText(modJSONLoc, modJSON);
         }
     }
+
+
+    void CopyDataFromMod(String directory, PWMod mod)
+    {
+        String modDTDirectory = Path.Combine(modDTFolder, mod.Name);
+        //Delete the modDTFolder first.
+        if (Directory.Exists(modDTDirectory))
+            Directory.Delete(modDTDirectory, true);
+
+        Directory.CreateDirectory(modDTDirectory);
+
+        String[] DataFolders = Directory.GetDirectories(directory, "Data", DefaultEnumeration);
+        foreach (String DataFolder in DataFolders)
+        {
+            String[] DataTables = Directory.GetFiles(DataFolder, "*.*", DefaultEnumeration);
+            foreach (String DataTable in DataTables)
+            {
+                mod.ModDataTables.Add(Path.GetFileName(DataTable));
+                File.Copy(DataTable, Path.Combine(modDTDirectory, Path.GetFileName(DataTable)), true);
+            }
+        }
+    }
+
     void DatabaseExtract(String directory, bool skipVanilla, bool isVanilla = false)
     {
         if (!Directory.Exists(ProcessedFiles)) { Directory.CreateDirectory(ProcessedFiles); }
@@ -395,7 +398,7 @@ internal class Program
             }
         }
     }
-    
+
     void handleProperty(PropertyData property, UAsset asset, DataTableProperty dataProp, PWDataEntry plane)
     {
         String propertyName = property.Name.ToString();
@@ -407,14 +410,14 @@ internal class Program
         switch (propertyType)
         {
             case "ObjectProperty":
-                if (plane.DataAssets.ContainsKey(propertyName)) 
+                if (plane.DataAssets.ContainsKey(propertyName))
                 {
                     String assetName = plane.DataAssets[propertyName];
                     String outerName = plane.AssetPackages[assetName];
 
                     Import import = asset.Imports.Find(x => x.ObjectName.ToString() == assetName);
                     Import outerImport = asset.Imports.Find(x => x.ObjectName.ToString() == plane.AssetPackages[assetName]);
-                    
+
                     import.OuterIndex = new FPackageIndex(asset.SearchForImport(outerImport.ObjectName));
                     property.SetObject(new FPackageIndex(asset.SearchForImport(import.ObjectName)));
                 }
@@ -437,12 +440,12 @@ internal class Program
                     }
                 }
                 break;
-         /* textPropertyData.FromString is currently unimplemented. I don't know of a way to set multiple values within a TextProperty yet.
-          * The safest way, thus, to handle TextProperties seems to at least for now be to not handle them. Oh well?
-          * case "TextProperty":
-                TextPropertyData textPropertyData = new TextPropertyData();
-                textPropertyData.FromString(dataProp.Value.Split(", "), asset);
-                property.SetObject(textPropertyData); break; */
+            /* textPropertyData.FromString is currently unimplemented. I don't know of a way to set multiple values within a TextProperty yet.
+             * The safest way, thus, to handle TextProperties seems to at least for now be to not handle them. Oh well?
+             * case "TextProperty":
+                   TextPropertyData textPropertyData = new TextPropertyData();
+                   textPropertyData.FromString(dataProp.Value.Split(", "), asset);
+                   property.SetObject(textPropertyData); break; */
             case "FloatProperty":
                 property.SetObject(float.Parse(dataProp.Value)); break;
             case "IntProperty":
@@ -618,7 +621,7 @@ internal class Program
 
                     vanillaEntry.DataProperties[boneKey].SubProperties[prezKey] = prezProp;
 
-                    foreach(PropertyData property in entry.Value)
+                    foreach (PropertyData property in entry.Value)
                     {
                         if (property.Name.ToString() == "BoneDetails_46_F00ED91D4FDF91F973A7DAAF8A291DBF")
                             handleProperty(property, baseAsset, vanillaEntry.DataProperties[property.Name.ToString()], vanillaEntry);
@@ -778,13 +781,14 @@ internal class Program
                                             SubProperties = null,
                                             Tag = null
                                         };
-                                        
+
                                         if (savedEntry.DataProperties.ContainsKey(boneKey))
                                         {
                                             if (savedEntry.DataProperties[boneKey].SubProperties.ContainsKey(prezKey))
                                             {
                                                 savedEntry.DataProperties[boneKey].SubProperties[prezKey] = prezProp;
-                                            } else
+                                            }
+                                            else
                                             {
                                                 savedEntry.DataProperties[boneKey].SubProperties.TryAdd(prezKey, prezProp);
                                             }
@@ -825,12 +829,12 @@ internal class Program
                                             handleProperty(currentProp, baseAsset, currentProperty, savedEntry);
                                         }
                                     }
-                                } 
-                                
+                                }
+
                             }
 
                         }
-                        
+
                     }
                 }
                 foreach (Import import in baseAsset.Imports)
@@ -962,7 +966,7 @@ internal class Program
                         PakReader pakReader = pakBuilder.Reader(pakFile);
                         foreach (var file in pakReader.Files())
                         {
-                            if (file.Contains(F59DataPath,StringComparison.InvariantCultureIgnoreCase))
+                            if (file.Contains(F59DataPath, StringComparison.InvariantCultureIgnoreCase))
                             {
                                 String destString = Path.Combine(program.f59DataFolder, file.Substring(F59DataPath.Length).TrimStart(Path.DirectorySeparatorChar));
 
@@ -973,7 +977,8 @@ internal class Program
                                 //Then write it!
                                 File.WriteAllBytes(destString, pakBytes);
 
-                            } else if (file.Contains(ProjectWingmanDataPath, StringComparison.InvariantCultureIgnoreCase))
+                            }
+                            else if (file.Contains(ProjectWingmanDataPath, StringComparison.InvariantCultureIgnoreCase))
                             {
                                 String destString = Path.Combine(program.vanillaDataFolder, file.Substring(ProjectWingmanDataPath.Length).TrimStart(Path.DirectorySeparatorChar));
 
@@ -983,7 +988,7 @@ internal class Program
                                 Directory.CreateDirectory(Path.GetDirectoryName(destString));
                                 //Then write it!
                                 File.WriteAllBytes(destString, pakBytes);
-                            } 
+                            }
                         }
                     }
                     break;
@@ -1027,13 +1032,13 @@ internal class Program
                             "Skipping Vanilla Playable Aircraft will make processing the Datatables in the future faster.\n" +
                             "This comes at the cost, of course, of not including their information\n" +
                             "(in case the extracted mods altered them at all)\n\n" +
-                            "On most modern PCs, however, the time saved is likely negligible.\n\n" + 
+                            "On most modern PCs, however, the time saved is likely negligible.\n\n" +
                             "[Y/N]");
                         string skipChoice = Console.ReadLine();
                         switch (skipChoice[0])
                         {
                             case 'y':
-                                program.DatabaseExtract(program.modDTFolder, true); 
+                                program.DatabaseExtract(program.modDTFolder, true);
                                 break;
                             case 'n':
                                 program.DatabaseExtract(program.modDTFolder, false);
