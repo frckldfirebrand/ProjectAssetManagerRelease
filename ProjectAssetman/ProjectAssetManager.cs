@@ -206,7 +206,7 @@ internal class ProjectAssetManager
     private void WriteAircraftJSON(UAsset asset, string subFolder, StructPropertyData line, string aircraftName, bool isVanilla = false)
     {
 
-        String[] vanillaPath = new string[0];
+        String vanillaPath = "";
         String[] pathToVanillaFile = new string[0];
 
         bool isVanillaEntry = false;
@@ -214,8 +214,9 @@ internal class ProjectAssetManager
         if (!isVanilla)
         {
             pathToVanillaFile = Directory.GetDirectories(Path.Combine(ProcessedFiles, "Vanilla"), Path.GetFileName(asset.FilePath), DefaultEnumeration);
-            vanillaPath = Directory.GetFiles(pathToVanillaFile[0], aircraftName + ".json", DefaultEnumeration);
-            if (vanillaPath.Length != 0)
+            List<String> vanillaFolderFiles = Directory.GetFiles(pathToVanillaFile[0]).ToList();
+            vanillaPath = vanillaFolderFiles.Find(x => Path.GetFileName(x) == aircraftName + ".json");
+            if (vanillaPath != null)
             {
                 isVanillaEntry = true;
                 Console.WriteLine("  Comparing this to {0}...", vanillaPath[0]);
@@ -231,7 +232,7 @@ internal class ProjectAssetManager
         PWDataEntry vanillaEntry = new PWDataEntry();
         if (!isVanilla && isVanillaEntry)
         {
-            String vanillaString = File.ReadAllText(vanillaPath[0]);
+            String vanillaString = File.ReadAllText(vanillaPath);
             vanillaEntry = JsonSerializer.Deserialize<PWDataEntry>(vanillaString, SerializerOptions);
         }
         else isIdenticalToVanilla = false;
@@ -276,7 +277,7 @@ internal class ProjectAssetManager
         Console.WriteLine("Scanning Vanilla Database...");
 
         DatabaseExtract(vanillaDataFolder, false, true);
-
+        DatabaseExtract(f59DataFolder, false, true);
     }
 
     void extractModPacks()
@@ -391,18 +392,15 @@ internal class ProjectAssetManager
         }
     }
 
-    PropertyData CreateSubPropertyFromJSON(DataTableProperty property, UAsset asset, PropertyData mother)
+    PropertyData CreateSubPropertyFromJSON(DataTableProperty property, UAsset asset, string Name)
     {
         switch(property.Type)
         {
             default:
                 String[] fromString = { property.UassetString };
-                //Console.WriteLine(property.UassetString);
                 ObjectPropertyData returner = new ObjectPropertyData();
-                //returner.FromString(fromString, asset);
-                returner.Name = mother.Name.Clone() as FName;
-                returner.Name.Value = new FString(property.Name);
-                //Console.WriteLine(returner.ToString());
+                returner.Name = new FName(asset, new FString(property.Name));
+                returner.FromString(fromString, asset);
                 return returner;
         }
     }
@@ -425,7 +423,7 @@ internal class ProjectAssetManager
                         Import imported = imports[plane.DataAssets[propertyName]].ToImport(asset);
                         if (plane.AssetPackages.ContainsKey(assetName)) imported.OuterIndex = imports[assetName];
                         property.SetObject(imports[plane.DataAssets[propertyName]]);
-                        Console.WriteLine(imported.ObjectName);
+                        //Console.WriteLine(imported.ObjectName);
                     }
                     
                     /* Console.WriteLine("   Looking for internal Object Value...");
@@ -454,7 +452,7 @@ internal class ProjectAssetManager
                         Array.Resize(ref newArray, dataProp.SubProperties.Count);
                         for (int i = 0; i < newArray.Length; i++)
                         {
-                            newArray[i] = CreateSubPropertyFromJSON(dataProp.SubProperties[i.ToString()], asset, arrayProp);
+                            newArray[i] = CreateSubPropertyFromJSON(dataProp.SubProperties[i.ToString()], asset, i.ToString());
                         }
                         arrayProp.Value = newArray;
                     }
@@ -607,6 +605,7 @@ internal class ProjectAssetManager
             char addVan = HelperFunctions.GetUserInput("YN".ToCharArray(), "Also add vanilla aircraft to F59?");
             if (addVan == 'y') addVanillaToF59 = true;
         }
+        
         String loadPrompt = "Which mod should be loaded now?\n";
         Dictionary<char, String> modNames = new Dictionary<char, String>();
         Dictionary<char, String> modNamesDisplay = new Dictionary<char, String>();
@@ -628,7 +627,7 @@ internal class ProjectAssetManager
             List<String> addedToF59 = new List<String>();
 
 
-            String baseAssetPath = Directory.GetFiles(vanillaDataFolder, combineDatatable, DefaultEnumeration)[0];
+            String baseAssetPath = Directory.GetFiles(vanillaFolder, combineDatatable, DefaultEnumeration)[0];
             //Console.WriteLine("Found vanilla asset at {0}", baseAssetPath);
 
             List<String> includedEntries = new List<String>();
@@ -910,7 +909,7 @@ internal class ProjectAssetManager
             }
 
 
-            String fileName = comboModDirect + "\\" + Path.GetFileNameWithoutExtension(combineDatatable) + ".uasset";
+            String fileName = Path.Combine(comboModDirect, Path.GetFileNameWithoutExtension(combineDatatable) + ".uasset");
             baseAsset.Write(fileName);
             UAsset dtRefresh = new UAsset(fileName, EngineVersion.VER_UE4_27);
             Console.WriteLine(dtRefresh.VerifyBinaryEquality());
@@ -919,7 +918,7 @@ internal class ProjectAssetManager
 
             if (addModsToF59)
             {
-                String f59fileName = comboModDirect + "\\" + "DB_MF_Aircraft.uasset";
+                String f59fileName = Path.Combine(comboModDirect, "DB_MF_Aircraft.uasset");
 
                 f59DT = dtRefresh;
 
@@ -947,7 +946,7 @@ internal class ProjectAssetManager
         {
             if (Path.GetFileNameWithoutExtension(file) == "DB_MF_Aircraft")
             {
-                String f59ModSpot = comboModDirect + "Content/ProjectWingman/Plugins/MagadanFront/Content/MagadanFront/Blueprints/Data/";
+                String f59ModSpot = Path.Combine(comboModDirect,"Content/ProjectWingman/Plugins/MagadanFront/Content/MagadanFront/Blueprints/Data/");
                 if (!Directory.Exists(f59ModSpot)) Directory.CreateDirectory(f59ModSpot);
                 File.Copy(file, f59ModSpot + Path.GetFileName(file), true);
             }
