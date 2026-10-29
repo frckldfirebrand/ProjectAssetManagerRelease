@@ -421,29 +421,29 @@ internal class ProjectAssetManager
             case "ObjectProperty":
                 if (plane.DataAssets.ContainsKey(propertyName))
                 {
-                    if (imports.ContainsKey(plane.DataAssets[propertyName]))
+                    /* if (imports.ContainsKey(plane.DataAssets[propertyName]))
                     {
                         String assetName = plane.DataAssets[propertyName];
                         Import imported = imports[plane.DataAssets[propertyName]].ToImport(asset);
                         if (plane.AssetPackages.ContainsKey(assetName)) imported.OuterIndex = imports[assetName];
                         property.SetObject(imports[plane.DataAssets[propertyName]]);
                         //Console.WriteLine(imported.ObjectName);
-                    }
+                    } */
                     
-                    /* Console.WriteLine("   Looking for internal Object Value...");
+                    Console.WriteLine("   Looking for internal Object Value...");
                     String assetName = plane.DataAssets[propertyName];
                     Console.WriteLine("    Using {0}", assetName);
                     String outerName = plane.AssetPackages[assetName];
                     Console.WriteLine("    Which should be part of {0}", outerName);
 
                     Import import = asset.Imports.Find(x => x.ObjectName.ToString() == assetName);
-                    Console.WriteLine("Found import {0} at {1}!", import.ObjectName.ToString(), import.ToString());
+
+                    Console.WriteLine($"Import has Class Name {import.ClassName}, Class Package {import.ClassPackage}, and Object Name {import.ObjectName}");
 
                     Import outerImport = asset.Imports.Find(x => x.ObjectName.ToString() == plane.AssetPackages[assetName]);
-                    Console.WriteLine("Found outer import {0} at {1}!", outerImport.ObjectName.ToString(), outerImport.);
 
                     import.OuterIndex = new FPackageIndex(asset.SearchForImport(outerImport.ObjectName));
-                    property.SetObject(new FPackageIndex(asset.SearchForImport(import.ObjectName))); */
+                    property.SetObject(new FPackageIndex(asset.SearchForImport(import.ObjectName)));
                 }
                 break;
             case "ArrayProperty":
@@ -643,6 +643,7 @@ internal class ProjectAssetManager
             //Console.WriteLine("Found vanilla asset at {0}", baseAssetPath);
 
             List<String> includedEntries = new List<String>();
+            Dictionary<String, List<PWDataEntry>> modifiedBy = new Dictionary<String, List<PWDataEntry>>();
 
             UAsset baseAsset = new UAsset(baseAssetPath, EngineVersion.VER_UE4_27);
 
@@ -753,6 +754,8 @@ internal class ProjectAssetManager
                             //Console.WriteLine(savedAircraftJson);
 
                             PWDataEntry savedEntry = JsonSerializer.Deserialize<PWDataEntry>(savedEntryJson, SerializerOptions);
+                            if (!modifiedBy.ContainsKey(entryName)) modifiedBy.Add(entryName, new List<PWDataEntry>() { savedEntry });
+                            else modifiedBy[entryName].Add(savedEntry);
 
                             if (modifyPrez && Path.GetFileName(combineDatatable) == "DB_Aircraft.uasset")
                             {
@@ -937,7 +940,23 @@ internal class ProjectAssetManager
             }
             foreach (String entry in includedEntries)
             {
-
+                List<PWDataEntry> modifiers = new List<PWDataEntry>();
+                if (modifiedBy.TryGetValue(entry, out modifiers))
+                {
+                    StructPropertyData currentEntry = baseEntries.Find(x => x.Name.ToString() == entry);
+                    foreach (PWDataEntry moddedValues in modifiers)
+                    {
+                        foreach (PropertyData currentProp in currentEntry.Value)
+                        {
+                            String propertyName = currentProp.Name.ToString();
+                            if (moddedValues.DataProperties.ContainsKey(propertyName))
+                            {
+                                DataTableProperty currentProperty = moddedValues.DataProperties[propertyName];
+                                handleProperty(currentProp, baseAsset, currentProperty, moddedValues, importMap);
+                            }
+                        }
+                    }
+                }
             }
             //Console.WriteLine(String.Join(", ", importMap.Keys));
 
