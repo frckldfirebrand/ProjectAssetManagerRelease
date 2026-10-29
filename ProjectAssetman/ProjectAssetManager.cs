@@ -1,5 +1,6 @@
 ﻿using ProjectAssetman;
 using System.Collections;
+using System.Numerics;
 using System.Text.Json;
 using System.Xml.Linq;
 using UAssetAPI;
@@ -214,8 +215,11 @@ internal class ProjectAssetManager
         if (!isVanilla)
         {
             pathToVanillaFile = Directory.GetDirectories(Path.Combine(ProcessedFiles, "Vanilla"), Path.GetFileName(asset.FilePath), DefaultEnumeration);
-            List<String> vanillaFolderFiles = Directory.GetFiles(pathToVanillaFile[0]).ToList();
-            vanillaPath = vanillaFolderFiles.Find(x => Path.GetFileName(x) == aircraftName + ".json");
+            //Console.WriteLine(pathToVanillaFile[0]);
+            String[] files = Directory.GetFiles(pathToVanillaFile[0]);
+            List<String> vanillaFolderFiles = new List<String>();
+            vanillaFolderFiles.AddRange(files);
+            vanillaPath = vanillaFolderFiles.Find(x => Path.GetFileName(x).ToLower() == (aircraftName + ".json").ToLower());
             if (vanillaPath != null)
             {
                 isVanillaEntry = true;
@@ -615,6 +619,14 @@ internal class ProjectAssetManager
             modNamesDisplay.Add(letter, $"[{letter}] - {includedMods[letter - 'a']}");
         }
 
+        List<String> loadorder = new List<String>();
+        while (modNames.Count > 0)
+        {
+            char modAnswer = HelperFunctions.GetUserInput(modNames.Keys.ToArray(), loadPrompt + String.Join("\n", modNamesDisplay.Values));
+            loadorder.Add(modNames[modAnswer]);
+            modNames.Remove(modAnswer);
+            modNamesDisplay.Remove(modAnswer);
+        }
 
         foreach (String combineDatatable in modifiedDatatables)
         {
@@ -688,7 +700,7 @@ internal class ProjectAssetManager
                 }
             }
 
-            foreach (String mod in includedMods)
+            foreach (String mod in loadorder)
             {
                 
                 Console.WriteLine(" Handling {0} values...", mod);
@@ -826,6 +838,7 @@ internal class ProjectAssetManager
                                     String savedEntryJson = File.ReadAllText(tableEntryFileLoc);
                                     //Console.WriteLine(savedAircraftJson);
                                     PWDataEntry savedEntry = JsonSerializer.Deserialize<PWDataEntry>(savedEntryJson, SerializerOptions);
+                                    includedEntries.Add(entryName);
                                     if (modifyPrez && Path.GetFileName(combineDatatable) == "DB_Aircraft.uasset")
                                     {
                                         String boneKey = "BoneDetails_46_F00ED91D4FDF91F973A7DAAF8A291DBF";
@@ -897,6 +910,7 @@ internal class ProjectAssetManager
                 }
                 foreach (Import import in baseAsset.Imports)
                 {
+                    
                     int objectNameInClassName = baseAsset.SearchForImport(import.ClassName);
                     if (objectNameInClassName != 0)
                     {
@@ -907,6 +921,25 @@ internal class ProjectAssetManager
 
 
             }
+
+
+            foreach (Import import in baseAsset.Imports)
+            {
+                if (importMap.ContainsKey(import.ObjectName.ToString()))
+               {
+                    Console.WriteLine("Still have import: {0}\n" +
+                    "Expected Location: {1}\n" +
+                    "Actual Location:{2}", import.ObjectName,
+                    importMap[import.ObjectName.ToString()],
+                    baseAsset.SearchForImport(import.ObjectName));
+                }
+                    
+            }
+            foreach (String entry in includedEntries)
+            {
+
+            }
+            //Console.WriteLine(String.Join(", ", importMap.Keys));
 
 
             String fileName = Path.Combine(comboModDirect, Path.GetFileNameWithoutExtension(combineDatatable) + ".uasset");
