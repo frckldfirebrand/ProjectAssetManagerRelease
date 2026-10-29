@@ -607,6 +607,14 @@ internal class ProjectAssetManager
             char addVan = HelperFunctions.GetUserInput("YN".ToCharArray(), "Also add vanilla aircraft to F59?");
             if (addVan == 'y') addVanillaToF59 = true;
         }
+        String loadPrompt = "Which mod should be loaded now?\n";
+        Dictionary<char, String> modNames = new Dictionary<char, String>();
+        Dictionary<char, String> modNamesDisplay = new Dictionary<char, String>();
+        for (char letter = 'a'; letter < 'a' + includedMods.Count; letter++) 
+        {
+            modNames.Add(letter, includedMods[letter - 'a']);
+            modNamesDisplay.Add(letter, $"[{letter}] - {includedMods[letter - 'a']}");
+        }
 
 
         foreach (String combineDatatable in modifiedDatatables)
