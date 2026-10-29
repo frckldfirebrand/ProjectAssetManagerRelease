@@ -50,4 +50,5 @@ class DataTableProperty
     public String? Value { get; set; }
     public Dictionary<String, DataTableProperty>? SubProperties { get; set; }
     public String? Tag { get; set; }
+    public String? UassetString { get; set; }
 }

@@ -1,6 +1,7 @@
 ﻿using ProjectAssetman;
 using System.Collections;
 using System.Text.Json;
+using System.Xml.Linq;
 using UAssetAPI;
 using UAssetAPI.ExportTypes;
 using UAssetAPI.PropertyTypes.Objects;
@@ -113,6 +114,8 @@ internal class ProjectAssetManager
         DataTableProperty property = new DataTableProperty { Name = propertyName, Type = propertyType };
         //Generic casting is bad but I don't know a smarter way to do it yet.
         Object propValue = propData.GetObject<Object>();
+        if (propValue != null) property.UassetString = propData.ToString();
+
         switch (propertyType)
         {
             case "ObjectProperty":
@@ -122,6 +125,7 @@ internal class ProjectAssetManager
                 {
                     Import objImport = objValue.ToImport(asset);
                     String objName = objImport.ObjectName.ToString();
+                    property.Tag = objImport.ObjectName.ToString();
 
                     importHolder.Add(objValue.Name.ToString(), objName);
                     if (!assetPackages.ContainsKey(objName)) assetPackages.Add(objName, objImport.OuterIndex.ToImport(asset).ObjectName.ToString());
@@ -387,7 +391,22 @@ internal class ProjectAssetManager
         }
     }
 
-    void handleProperty(PropertyData property, UAsset asset, DataTableProperty dataProp, PWDataEntry plane)
+    PropertyData CreateSubPropertyFromJSON(DataTableProperty property, UAsset asset, PropertyData mother)
+    {
+        switch(property.Type)
+        {
+            default:
+                String[] fromString = { property.UassetString };
+                //Console.WriteLine(property.UassetString);
+                ObjectPropertyData returner = new ObjectPropertyData();
+                //returner.FromString(fromString, asset);
+                returner.Name = mother.Name.Clone() as FName;
+                returner.Name.Value = new FString(property.Name);
+                //Console.WriteLine(returner.ToString());
+                return returner;
+        }
+    }
+    void handleProperty(PropertyData property, UAsset asset, DataTableProperty dataProp, PWDataEntry plane, Dictionary<String, FPackageIndex> imports)
     {
         String propertyName = property.Name.ToString();
         String propertyType = property.PropertyType.ToString();
@@ -400,22 +419,54 @@ internal class ProjectAssetManager
             case "ObjectProperty":
                 if (plane.DataAssets.ContainsKey(propertyName))
                 {
+                    if (imports.ContainsKey(plane.DataAssets[propertyName]))
+                    {
+                        String assetName = plane.DataAssets[propertyName];
+                        Import imported = imports[plane.DataAssets[propertyName]].ToImport(asset);
+                        if (plane.AssetPackages.ContainsKey(assetName)) imported.OuterIndex = imports[assetName];
+                        property.SetObject(imports[plane.DataAssets[propertyName]]);
+                        Console.WriteLine(imported.ObjectName);
+                    }
+                    
+                    /* Console.WriteLine("   Looking for internal Object Value...");
                     String assetName = plane.DataAssets[propertyName];
+                    Console.WriteLine("    Using {0}", assetName);
                     String outerName = plane.AssetPackages[assetName];
+                    Console.WriteLine("    Which should be part of {0}", outerName);
 
                     Import import = asset.Imports.Find(x => x.ObjectName.ToString() == assetName);
+                    Console.WriteLine("Found import {0} at {1}!", import.ObjectName.ToString(), import.ToString());
+
                     Import outerImport = asset.Imports.Find(x => x.ObjectName.ToString() == plane.AssetPackages[assetName]);
+                    Console.WriteLine("Found outer import {0} at {1}!", outerImport.ObjectName.ToString(), outerImport.);
 
                     import.OuterIndex = new FPackageIndex(asset.SearchForImport(outerImport.ObjectName));
-                    property.SetObject(new FPackageIndex(asset.SearchForImport(import.ObjectName)));
+                    property.SetObject(new FPackageIndex(asset.SearchForImport(import.ObjectName))); */
                 }
                 break;
             case "ArrayProperty":
                 ArrayPropertyData arrayProp = (ArrayPropertyData)property;
-                for (int i = 0; i < arrayProp.Value.Length; i++)
+                if (arrayProp.Value != null)
                 {
-                    PropertyData subData = arrayProp.Value[i];
-                    handleProperty(subData, asset, dataProp.SubProperties[subData.Name.ToString()], plane);
+                    if (arrayProp.Value.Length != dataProp.SubProperties.Count)
+                    {
+                        PropertyData[] newArray = arrayProp.Value.Clone() as PropertyData[];
+                        Array.Resize(ref newArray, dataProp.SubProperties.Count);
+                        for (int i = 0; i < newArray.Length; i++)
+                        {
+                            newArray[i] = CreateSubPropertyFromJSON(dataProp.SubProperties[i.ToString()], asset, arrayProp);
+                        }
+                        arrayProp.Value = newArray;
+                    }
+                    Console.WriteLine("   Found non-null ArrayProp...");
+                    List<PropertyData> subDataList = arrayProp.Value.ToList();
+                    foreach (PropertyData subData in subDataList)
+                    {
+                        //StrPropertyData strData = subData as StrPropertyData;
+                        //if (strData != null) Console.WriteLine("    Iterating over ArrayProp Subdata {0} with value {1}...", subData.Name.ToString(), strData.Value);
+                        //Console.WriteLine("    Using {0} from JSON which has value {1}", dataProp.SubProperties[subData.Name.ToString()].Name, dataProp.SubProperties[subData.Name.ToString()].Value);
+                        handleProperty(subData, asset, dataProp.SubProperties[subData.Name.ToString()], plane, imports);
+                    }
                 }
                 break;
             case "StructProperty":
@@ -424,7 +475,7 @@ internal class ProjectAssetManager
                     List<PropertyData> subDataList = propertyValue as List<PropertyData>;
                     foreach (PropertyData subData in subDataList)
                     {
-                        handleProperty(subData, asset, dataProp.SubProperties[subData.Name.ToString()], plane);
+                        handleProperty(subData, asset, dataProp.SubProperties[subData.Name.ToString()], plane, imports);
                     }
                 }
                 break;
@@ -440,8 +491,8 @@ internal class ProjectAssetManager
                 property.SetObject(int.Parse(dataProp.Value)); break;
             case "DoubleProperty":
                 property.SetObject(float.Parse(dataProp.Value)); break;
-            case "StringProperty":
-                property.SetObject(dataProp.Value); break;
+            case "StrProperty":
+                property.SetObject(new FString(dataProp.Value)); break;
             case "BoolProperty":
                 property.SetObject(bool.Parse(dataProp.Value)); break;
             default:
@@ -560,7 +611,7 @@ internal class ProjectAssetManager
 
         foreach (String combineDatatable in modifiedDatatables)
         {
-            //Console.WriteLine("Handling {0}...", combineDatatable);
+            Console.WriteLine("Handling {0}...", combineDatatable);
 
             UAsset f59DT = new UAsset();
             String[] f59DTPath = Directory.GetFiles(vanillaFolder, "DB_MF_Aircraft.uasset", DefaultEnumeration);
@@ -578,6 +629,8 @@ internal class ProjectAssetManager
 
             DataTableExport baseDataTable = baseAsset.Exports[0] as DataTableExport;
             List<StructPropertyData> baseEntries = baseDataTable.Table.Data;
+
+            Dictionary<String, FPackageIndex> importMap = new Dictionary<String, FPackageIndex>();
 
             foreach (StructPropertyData entry in baseEntries)
             {
@@ -609,7 +662,7 @@ internal class ProjectAssetManager
                     foreach (PropertyData property in entry.Value)
                     {
                         if (property.Name.ToString() == "BoneDetails_46_F00ED91D4FDF91F973A7DAAF8A291DBF")
-                            handleProperty(property, baseAsset, vanillaEntry.DataProperties[property.Name.ToString()], vanillaEntry);
+                            handleProperty(property, baseAsset, vanillaEntry.DataProperties[property.Name.ToString()], vanillaEntry, importMap);
                     }
 
                 }
@@ -630,6 +683,9 @@ internal class ProjectAssetManager
 
             foreach (String mod in includedMods)
             {
+                
+                Console.WriteLine(" Handling {0} values...", mod);
+                
                 String modName = Path.GetFileNameWithoutExtension(mod);
                 String modJsonFolder = Path.Combine(ProcessedFiles, modName);
                 String modDataFolder = Path.Combine(modDTFolder, modName);
@@ -645,25 +701,35 @@ internal class ProjectAssetManager
                     DataTableExport moddedDataTable = modDBAC.Exports[0] as DataTableExport;
                     List<StructPropertyData> moddedEntries = moddedDataTable.Table.Data;
 
+
                     foreach (FString name in modDBAC.GetNameMapIndexList())
                     {
-                        if (!baseAsset.ContainsNameReference(name)) baseAsset.AddNameReference(name, false, false);
+                        if (!baseAsset.ContainsNameReference(name))
+                        {
+                            int index = baseAsset.AddNameReference(name, false, false);
+                            Console.WriteLine("  Added {0} to name map at {1}!", name.ToString(), index);
+                        }
 
                     }
                     foreach (Import import in modDBAC.Imports)
                     {
-                        if (baseAsset.SearchForImport(import.ObjectName) == 0) baseAsset.AddImport(import);
+                        if (baseAsset.SearchForImport(import.ObjectName) == 0)
+                        {
+                            FPackageIndex index = baseAsset.AddImport(import);
+                            importMap.Add(import.ObjectName.ToString(), index);
+                            Console.WriteLine("  Added {0} to import map at {1}", import.ObjectName.ToString(), index);
+                        }
 
                     }
                     foreach (StructPropertyData tableEntry in moddedEntries)
                     {
                         String entryName = tableEntry.Name.ToString();
-                        Console.WriteLine("Found " + entryName);
+                        Console.WriteLine("  Found " + entryName);
                         String tableEntryFileLoc = Path.Combine(ProcessedFiles, modName, combineDatatable, entryName + ".json");
                         //Console.WriteLine("Attempting to find" + tableEntryFileLoc);
                         if (Path.Exists(tableEntryFileLoc))
                         {
-                            Console.WriteLine("Found " + tableEntryFileLoc);
+                            //Console.WriteLine("Found " + tableEntryFileLoc);
                             String savedEntryJson = File.ReadAllText(tableEntryFileLoc);
                             //Console.WriteLine(savedAircraftJson);
 
@@ -695,10 +761,10 @@ internal class ProjectAssetManager
                                     }
                                 }
                             }
-                            else Console.WriteLine("Not editing Prez for {0} at {1}", entryName, combineDatatable);
+                            else Console.WriteLine("  Not editing Prez for {0} at {1}", entryName, combineDatatable);
                             if (!includedEntries.Contains(entryName))
                             {
-                                Console.WriteLine("Adding {0} to datatable...", entryName);
+                                Console.WriteLine("  Adding {0} to datatable...", entryName);
                                 includedEntries.Add(entryName);
                                 baseEntries.Add(tableEntry);
                             }
@@ -727,7 +793,7 @@ internal class ProjectAssetManager
                                 if (savedEntry.DataProperties.ContainsKey(propertyName))
                                 {
                                     DataTableProperty currentProperty = savedEntry.DataProperties[propertyName];
-                                    handleProperty(currentProp, baseAsset, currentProperty, savedEntry);
+                                    handleProperty(currentProp, baseAsset, currentProperty, savedEntry, importMap);
                                 }
                             }
                         }
@@ -811,7 +877,7 @@ internal class ProjectAssetManager
                                         if (savedEntry.DataProperties.ContainsKey(propertyName))
                                         {
                                             DataTableProperty currentProperty = savedEntry.DataProperties[propertyName];
-                                            handleProperty(currentProp, baseAsset, currentProperty, savedEntry);
+                                            handleProperty(currentProp, baseAsset, currentProperty, savedEntry, importMap);
                                         }
                                     }
                                 }
@@ -840,7 +906,7 @@ internal class ProjectAssetManager
             baseAsset.Write(fileName);
             UAsset dtRefresh = new UAsset(fileName, EngineVersion.VER_UE4_27);
             Console.WriteLine(dtRefresh.VerifyBinaryEquality());
-            dtRefresh.Write(fileName);
+            //dtRefresh.Write(fileName);
 
 
             if (addModsToF59)
@@ -862,7 +928,7 @@ internal class ProjectAssetManager
                 f59DT.Write(f59fileName);
                 UAsset f59Ref = new UAsset(f59fileName, EngineVersion.VER_UE4_27);
                 //Console.WriteLine(f59Ref.VerifyBinaryEquality());
-                f59Ref.Write(f59fileName);
+                //f59Ref.Write(f59fileName);
                 addModsToF59 = false;
                 addVanillaToF59 = false;
             }
@@ -910,11 +976,11 @@ internal class ProjectAssetManager
         {
             if (user.AutomaticallyDeploy)
             {
-                File.Copy(modPakName, Path.Combine(user.ProjectWingmanPAMLocation, modPakName));
+                File.Copy(modPakName, Path.Combine(user.ProjectWingmanPAMLocation, modPakName), true);
             } else
             {
                 char CanCopy = HelperFunctions.GetUserInput("YN".ToCharArray(), "Deploy PAK to ~PAM folder in Paks?");
-                if (CanCopy == 'y') File.Copy(modPakName, Path.Combine(user.ProjectWingmanPAMLocation, modPakName));
+                if (CanCopy == 'y') File.Copy(modPakName, Path.Combine(user.ProjectWingmanPAMLocation, modPakName), true);
             }
         }
         
@@ -935,9 +1001,9 @@ internal class ProjectAssetManager
         {
             Console.WriteLine("User settings not found! Initializing first time user setup...");
             program.user.userSetup(program.coreFiles);
-            File.WriteAllText(program.UserSettingsFilePath, JsonSerializer.Serialize(program.user));
+            File.WriteAllText(program.UserSettingsFilePath, JsonSerializer.Serialize(program.user, SerializerOptions));
         }
-        else program.user = JsonSerializer.Deserialize<UserSettings>(File.ReadAllText(program.UserSettingsFilePath));
+        else program.user = JsonSerializer.Deserialize<UserSettings>(File.ReadAllText(program.UserSettingsFilePath), SerializerOptions);
         
 
         while (managerContinue)

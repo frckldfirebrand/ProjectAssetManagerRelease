@@ -16,6 +16,15 @@ namespace ProjectAssetman
         public bool AutomateDatabases = false;
         public bool AutomaticallyDeploy = false;
 
+        private void ResetValues()
+        {
+            UserID = string.Empty;
+            ProjectWingmanFileLocation = string.Empty;
+            ProjectWingmanPAMLocation = string.Empty;
+            AllowEditToPWFolders = false;
+            AutomateDatabases= false;
+            AutomaticallyDeploy = false;
+        }
         public void userStartup(Dictionary<String, String>folders)
         {
             if (!Directory.Exists(folders["ProcessedFiles"])) { Directory.CreateDirectory("Processed Files\\"); }
@@ -39,6 +48,7 @@ namespace ProjectAssetman
         }
         public void userSetup(Dictionary<String, String> folders) 
         {
+            ResetValues();
             Console.WriteLine("Enter in a User ID for us to attribute combined mods to.");
             UserID = Console.ReadLine();
             bool lacksPWPak = true;
@@ -62,8 +72,8 @@ namespace ProjectAssetman
                     WriteBaseFiles(folders, pwMainPaks);
                 }
             }
-            
-            if (HelperFunctions.GetUserInput("YN".ToCharArray(), 
+
+            if (HelperFunctions.GetUserInput("YN".ToCharArray(),
                 "Do you wish to allow Project Asset Manager to modify folders in your Project Wingman Directory?\n" +
                 "(Under normal circumstances, this is limited to writing mods to a new directory PAM will create called ~PAM)") == 'y')
             {
@@ -79,10 +89,12 @@ namespace ProjectAssetman
                 {
                     AutomaticallyDeploy = true;
                 }
+                else AutomaticallyDeploy = false;
             }
+            else AllowEditToPWFolders = false;
             if (HelperFunctions.GetUserInput("YN".ToCharArray(),
                 "Do you wish to automatically create Mod Databases after extracting modified Pak files?") == 'y')
-            {  AutomateDatabases = true; }
+            {  AutomateDatabases = true; } else AutomateDatabases = false;
             
         }
         void WriteBaseFiles(Dictionary<String, String> folders, String[] pwMainPaks)
