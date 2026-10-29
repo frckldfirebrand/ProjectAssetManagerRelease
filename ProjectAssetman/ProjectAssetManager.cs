@@ -422,8 +422,13 @@ internal class ProjectAssetManager
                     if (imports.ContainsKey(plane.DataAssets[propertyName]))
                     {
                         String assetName = plane.DataAssets[propertyName];
+                        
                         Import imported = imports[plane.DataAssets[propertyName]].ToImport(asset);
-                        if (plane.AssetPackages.ContainsKey(assetName)) imported.OuterIndex = imports[assetName];
+                        if (plane.AssetPackages.ContainsKey(assetName)) 
+                        {
+                            String outer = plane.AssetPackages[assetName];
+                            imported.OuterIndex = imports[outer];
+                        }
                         property.SetObject(imports[plane.DataAssets[propertyName]]);
                         Console.WriteLine(imported.ObjectName);
                     }
@@ -607,6 +612,23 @@ internal class ProjectAssetManager
             char addVan = HelperFunctions.GetUserInput("YN".ToCharArray(), "Also add vanilla aircraft to F59?");
             if (addVan == 'y') addVanillaToF59 = true;
         }
+        String loadPrompt = "Which mod should be loaded now?\n";
+        Dictionary<char, String> modNames = new Dictionary<char, String>();
+        Dictionary<char, String> modNamesDisplay = new Dictionary<char, String>();
+        for (char letter = 'a'; letter < 'a' + includedMods.Count; letter++) 
+        {
+            modNames.Add(letter, includedMods[letter - 'a']);
+            modNamesDisplay.Add(letter, $"[{letter}] - {includedMods[letter - 'a']}");
+        }
+
+        List<String> loadorder = new List<String>();
+        while(modNames.Count > 0)
+        {
+            char modAnswer = HelperFunctions.GetUserInput(modNames.Keys.ToArray(), loadPrompt + String.Join("\n", modNamesDisplay.Values));
+            loadorder.Add(modNames[modAnswer]);
+            modNames.Remove(modAnswer);
+            modNamesDisplay.Remove(modAnswer);
+        }
 
 
         foreach (String combineDatatable in modifiedDatatables)
@@ -681,7 +703,7 @@ internal class ProjectAssetManager
                 }
             }
 
-            foreach (String mod in includedMods)
+            foreach (String mod in loadorder)
             {
                 
                 Console.WriteLine(" Handling {0} values...", mod);
@@ -701,32 +723,12 @@ internal class ProjectAssetManager
                     DataTableExport moddedDataTable = modDBAC.Exports[0] as DataTableExport;
                     List<StructPropertyData> moddedEntries = moddedDataTable.Table.Data;
 
-
-                    foreach (FString name in modDBAC.GetNameMapIndexList())
-                    {
-                        if (!baseAsset.ContainsNameReference(name))
-                        {
-                            int index = baseAsset.AddNameReference(name, false, false);
-                            Console.WriteLine("  Added {0} to name map at {1}!", name.ToString(), index);
-                        }
-
-                    }
-                    foreach (Import import in modDBAC.Imports)
-                    {
-                        if (baseAsset.SearchForImport(import.ObjectName) == 0)
-                        {
-                            FPackageIndex index = baseAsset.AddImport(import);
-                            importMap.Add(import.ObjectName.ToString(), index);
-                            Console.WriteLine("  Added {0} to import map at {1}", import.ObjectName.ToString(), index);
-                        }
-
-                    }
                     foreach (StructPropertyData tableEntry in moddedEntries)
                     {
                         String entryName = tableEntry.Name.ToString();
                         Console.WriteLine("  Found " + entryName);
                         String tableEntryFileLoc = Path.Combine(ProcessedFiles, modName, combineDatatable, entryName + ".json");
-                        //Console.WriteLine("Attempting to find" + tableEntryFileLoc);
+                        Console.WriteLine("Attempting to find" + tableEntryFileLoc);
                         if (Path.Exists(tableEntryFileLoc))
                         {
                             //Console.WriteLine("Found " + tableEntryFileLoc);
@@ -734,6 +736,27 @@ internal class ProjectAssetManager
                             //Console.WriteLine(savedAircraftJson);
 
                             PWDataEntry savedEntry = JsonSerializer.Deserialize<PWDataEntry>(savedEntryJson, SerializerOptions);
+
+
+                            foreach (FString name in modDBAC.GetNameMapIndexList())
+                            {
+                                if (!baseAsset.ContainsNameReference(name))
+                                {
+                                    int index = baseAsset.AddNameReference(name, false, false);
+                                    Console.WriteLine("  Added {0} to name map at {1}!", name.ToString(), index);
+                                }
+
+                            }
+                            foreach (Import import in modDBAC.Imports)
+                            {
+                                if (baseAsset.SearchForImport(import.ObjectName) == 0)
+                                {
+                                    FPackageIndex index = baseAsset.AddImport(import);
+                                    importMap.Add(import.ObjectName.ToString(), index);
+                                    Console.WriteLine("  Added {0} to import map at {1}", import.ObjectName.ToString(), index);
+                                }
+
+                            }
 
                             if (modifyPrez && Path.GetFileName(combineDatatable) == "DB_Aircraft.uasset")
                             {
@@ -792,8 +815,17 @@ internal class ProjectAssetManager
                                 String propertyName = currentProp.Name.ToString();
                                 if (savedEntry.DataProperties.ContainsKey(propertyName))
                                 {
-                                    DataTableProperty currentProperty = savedEntry.DataProperties[propertyName];
-                                    handleProperty(currentProp, baseAsset, currentProperty, savedEntry, importMap);
+                                    PropertyData moddedProp = tableEntry.Value.Find(x => x.Name == currentProp.Name).Clone() as PropertyData;
+                                    currentProp.SetObject(moddedProp.GetObject<Object>());
+                                    if (currentProp.Name.ToString() == "BoneDetails_46_F00ED91D4FDF91F973A7DAAF8A291DBF" && modifyPrez)
+                                    {
+                                        if (currentProp is StructPropertyData bone)
+                                        {
+                                            if (bone.Value[0].Name.ToString() == "PilotCount_2_65D06B7D492533AA2F8E9DA8254C5747")
+                                                bone.Value[0].SetObject(int.Parse(forcedSeating));
+
+                                        }
+                                    }
                                 }
                             }
                         }
