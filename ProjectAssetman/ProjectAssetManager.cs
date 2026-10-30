@@ -154,6 +154,7 @@ internal class ProjectAssetManager
                     {
                         PropertyData subData = arrayProp.Value[i];
                         subProperties.Add(subData.Name.ToString(), SaveDataTableProperty(subData, asset, importHolder, assetPackages));
+                        subProperties[subData.Name.ToString()].Tag = propertyName;
                     }
                     property.SubProperties = subProperties;
                 }
@@ -396,14 +397,14 @@ internal class ProjectAssetManager
         }
     }
 
-    PropertyData CreateSubPropertyFromJSON(DataTableProperty property, UAsset asset, string Name)
+    PropertyData CreateSubPropertyFromJSON(DataTableProperty property, UAsset asset, string name)
     {
         switch(property.Type)
         {
             default:
                 String[] fromString = { property.UassetString };
                 ObjectPropertyData returner = new ObjectPropertyData();
-                returner.Name = new FName(asset, new FString(property.Name));
+                returner.Name = FName.DefineDummy(asset, name);
                 returner.FromString(fromString, asset);
                 return returner;
         }
@@ -610,23 +611,48 @@ internal class ProjectAssetManager
             if (addVan == 'y') addVanillaToF59 = true;
         }
         
-        String loadPrompt = "Which mod should be loaded now?\n";
+        
         Dictionary<char, String> modNames = new Dictionary<char, String>();
         Dictionary<char, String> modNamesDisplay = new Dictionary<char, String>();
-        for (char letter = 'a'; letter < 'a' + includedMods.Count; letter++) 
-        {
-            modNames.Add(letter, includedMods[letter - 'a']);
-            modNamesDisplay.Add(letter, $"[{letter}] - {includedMods[letter - 'a']}");
-        }
+        
 
         List<String> loadorder = new List<String>();
-        while (modNames.Count > 0)
+
+        if (HelperFunctions.GetUserInput("YN".ToCharArray(), "ADVANCED: Use a custom loadorder?") == 'y')
         {
-            char modAnswer = HelperFunctions.GetUserInput(modNames.Keys.ToArray(), loadPrompt + String.Join("\n", modNamesDisplay.Values));
-            loadorder.Add(modNames[modAnswer]);
-            modNames.Remove(modAnswer);
-            modNamesDisplay.Remove(modAnswer);
+            String loadPrompt = "Which mod should be loaded now?\n";
+            for (char letter = 'a'; letter < 'a' + includedMods.Count; letter++)
+            {
+                modNames.Add(letter, includedMods[letter - 'a']);
+                modNamesDisplay.Add(letter, $"[{letter}] - {includedMods[letter - 'a']}");
+            }
+            while (modNames.Count > 0)
+            {
+                char modAnswer = HelperFunctions.GetUserInput(modNames.Keys.ToArray(), loadPrompt + String.Join("\n", modNamesDisplay.Values));
+                loadorder.Add(modNames[modAnswer]);
+                modNames.Remove(modAnswer);
+                modNamesDisplay.Remove(modAnswer);
+            }
         }
+        else loadorder = includedMods;
+        
+        
+        
+        bool overrideVan = false;
+        String overrideMod = "";
+
+        if (HelperFunctions.GetUserInput("YN".ToCharArray(), "ADVANCED: Use a mod's datatable instead of vanillas? Can help with compatability.") == 'y')
+        {
+            overrideVan = true;
+            for (char letter = 'a'; letter < 'a' + includedMods.Count; letter++)
+            {
+                modNames.Add(letter, includedMods[letter - 'a']);
+                modNamesDisplay.Add(letter, $"[{letter}] - {includedMods[letter - 'a']}");
+            }
+
+            overrideMod = modNames[HelperFunctions.GetUserInput(modNames.Keys.ToArray(), "Which mod to use for base?" + String.Join("\n", modNamesDisplay.Values))];
+        }
+        
 
         foreach (String combineDatatable in modifiedDatatables)
         {
@@ -645,12 +671,22 @@ internal class ProjectAssetManager
             List<String> includedEntries = new List<String>();
             Dictionary<String, List<PWDataEntry>> modifiedBy = new Dictionary<String, List<PWDataEntry>>();
 
+            if (overrideVan)
+            {
+                String[] paths = Directory.GetFiles(Path.Combine(modDTFolder, overrideMod), Path.GetFileName(combineDatatable), DefaultEnumeration);
+                if (paths != null && paths.Length > 0)
+                {
+                    baseAssetPath = paths[0];
+                }
+            }
+
             UAsset baseAsset = new UAsset(baseAssetPath, EngineVersion.VER_UE4_27);
 
             DataTableExport baseDataTable = baseAsset.Exports[0] as DataTableExport;
             List<StructPropertyData> baseEntries = baseDataTable.Table.Data;
 
             Dictionary<String, FPackageIndex> importMap = new Dictionary<String, FPackageIndex>();
+            Dictionary<String, int> nameMap = new Dictionary<String, int>();
 
             foreach (StructPropertyData entry in baseEntries)
             {
@@ -721,29 +757,39 @@ internal class ProjectAssetManager
                     DataTableExport moddedDataTable = modDBAC.Exports[0] as DataTableExport;
                     List<StructPropertyData> moddedEntries = moddedDataTable.Table.Data;
 
-
                     foreach (FString name in modDBAC.GetNameMapIndexList())
                     {
                         if (!baseAsset.ContainsNameReference(name))
                         {
-                            int index = baseAsset.AddNameReference(name, false, false);
+                            int index = baseAsset.AddNameReference(name);
+                            nameMap.Add(name.ToString(), index);
                             Console.WriteLine("  Added {0} to name map at {1}!", name.ToString(), index);
                         }
 
                     }
+
                     foreach (Import import in modDBAC.Imports)
                     {
                         if (baseAsset.SearchForImport(import.ObjectName) == 0)
                         {
+                            //import.ObjectName.Number = nameMap[import.ObjectName.ToString()];
+                            if (import.PackageName != null)
+                            {
+                                if (!baseAsset.ContainsNameReference(import.PackageName.Value)) baseAsset.AddNameReference(import.PackageName.Value);
+                            }
                             FPackageIndex index = baseAsset.AddImport(import);
                             importMap.Add(import.ObjectName.ToString(), index);
-                            Console.WriteLine("  Added {0} to import map at {1}", import.ObjectName.ToString(), index);
+                            Console.WriteLine("  Added {0} to import map at {1}. Its name's number is {2}.", import.ObjectName.ToString(), index, import.ObjectName.Number);
                         }
 
                     }
+
+                    
+                    
                     foreach (StructPropertyData tableEntry in moddedEntries)
                     {
                         String entryName = tableEntry.Name.ToString();
+                        if (!baseAsset.ContainsNameReference(tableEntry.Name.Value)) baseAsset.AddNameReference(tableEntry.Name.Value);
                         Console.WriteLine("  Found " + entryName);
                         String tableEntryFileLoc = Path.Combine(ProcessedFiles, modName, combineDatatable, entryName + ".json");
                         //Console.WriteLine("Attempting to find" + tableEntryFileLoc);
@@ -815,6 +861,9 @@ internal class ProjectAssetManager
                                 if (savedEntry.DataProperties.ContainsKey(propertyName))
                                 {
                                     DataTableProperty currentProperty = savedEntry.DataProperties[propertyName];
+                                    StructPropertyData moddedAircraft = moddedEntries.Find(x => x.Name == tableEntry.Name);
+                                    PropertyData moddedprop = moddedAircraft.Value.Find(x => x.Name == currentProp.Name).Clone() as PropertyData;
+                                    currentProp.SetObject(moddedprop.GetObject<object>());
                                     handleProperty(currentProp, baseAsset, currentProperty, savedEntry, importMap);
                                 }
                             }
@@ -925,6 +974,13 @@ internal class ProjectAssetManager
 
             }
 
+            foreach (String key in nameMap.Keys)
+            {
+                FString keyFString = new FString(key);
+                int index = baseAsset.SearchNameReference(keyFString);
+                Console.WriteLine("Found Name Reference {0} at {1}. It is supposed to be at {2}", key, index, nameMap[key]);
+                baseAsset.SetNameReference(nameMap[key], keyFString);
+            }
 
             foreach (Import import in baseAsset.Imports)
             {
@@ -965,7 +1021,7 @@ internal class ProjectAssetManager
             baseAsset.Write(fileName);
             UAsset dtRefresh = new UAsset(fileName, EngineVersion.VER_UE4_27);
             Console.WriteLine(dtRefresh.VerifyBinaryEquality());
-            //dtRefresh.Write(fileName);
+            dtRefresh.Write(fileName);
 
 
             if (addModsToF59)
