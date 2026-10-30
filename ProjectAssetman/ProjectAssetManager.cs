@@ -438,13 +438,16 @@ internal class ProjectAssetManager
                     Console.WriteLine("    Which should be part of {0}", outerName);
 
                     Import import = asset.Imports.Find(x => x.ObjectName.ToString() == assetName);
+                    FPackageIndex importLoc = FPackageIndex.FromRawIndex(asset.SearchForImport(import.ObjectName));
 
-                    Console.WriteLine($"Import has Class Name {import.ClassName}, Class Package {import.ClassPackage}, and Object Name {import.ObjectName}");
+                    import.ObjectName.Value = new FString(assetName);
+
+                    Console.WriteLine($"   Import is {import.ToString()}, has Class Name {import.ClassName}, Class Package {import.ClassPackage}, and Object Name {import.ObjectName}\n" +
+                        $"   It's value is {importLoc}.");
 
                     Import outerImport = asset.Imports.Find(x => x.ObjectName.ToString() == plane.AssetPackages[assetName]);
-
                     import.OuterIndex = new FPackageIndex(asset.SearchForImport(outerImport.ObjectName));
-                    property.SetObject(new FPackageIndex(asset.SearchForImport(import.ObjectName)));
+                    property.SetObject(importLoc);
                 }
                 break;
             case "ArrayProperty":
@@ -761,9 +764,10 @@ internal class ProjectAssetManager
                     {
                         if (!baseAsset.ContainsNameReference(name))
                         {
-                            int index = baseAsset.AddNameReference(name);
-                            nameMap.Add(name.ToString(), index);
-                            Console.WriteLine("  Added {0} to name map at {1}!", name.ToString(), index);
+                            FString newName = new FString(name.ToString());
+                            int index = baseAsset.AddNameReference(newName);
+                            nameMap.Add(newName.ToString(), index);
+                            Console.WriteLine("  Added {0} to name map at {1}!", newName.ToString(), index);
                         }
 
                     }
@@ -773,13 +777,14 @@ internal class ProjectAssetManager
                         if (baseAsset.SearchForImport(import.ObjectName) == 0)
                         {
                             //import.ObjectName.Number = nameMap[import.ObjectName.ToString()];
-                            if (import.PackageName != null)
-                            {
-                                if (!baseAsset.ContainsNameReference(import.PackageName.Value)) baseAsset.AddNameReference(import.PackageName.Value);
-                            }
-                            FPackageIndex index = baseAsset.AddImport(import);
-                            importMap.Add(import.ObjectName.ToString(), index);
-                            Console.WriteLine("  Added {0} to import map at {1}. Its name's number is {2}.", import.ObjectName.ToString(), index, import.ObjectName.Number);
+                            var dst = new Import(
+                                import.ClassPackage.Transfer(baseAsset),
+                                import.ClassName.Transfer(baseAsset),
+                                new FPackageIndex(0), // fix up in a second pass somehow
+                                import.ObjectName.Transfer(baseAsset),
+                                import.bImportOptional);
+                            if (import.PackageName != null) dst.PackageName = import.PackageName.Transfer(baseAsset);
+                            baseAsset.AddImport(dst);
                         }
 
                     }
@@ -834,7 +839,7 @@ internal class ProjectAssetManager
                             {
                                 Console.WriteLine("  Adding {0} to datatable...", entryName);
                                 includedEntries.Add(entryName);
-                                baseEntries.Add(tableEntry);
+                                baseEntries.Add(tableEntry.Clone() as StructPropertyData);
                             }
 
                             StructPropertyData currentAircraft = baseEntries.Find(x => x.Name == tableEntry.Name);
@@ -979,7 +984,8 @@ internal class ProjectAssetManager
                 FString keyFString = new FString(key);
                 int index = baseAsset.SearchNameReference(keyFString);
                 Console.WriteLine("Found Name Reference {0} at {1}. It is supposed to be at {2}", key, index, nameMap[key]);
-                baseAsset.SetNameReference(nameMap[key], keyFString);
+                //baseAsset.SetNameReference(nameMap[key], keyFString);
+                baseAsset.AddNameReference(keyFString);
             }
 
             foreach (Import import in baseAsset.Imports)
@@ -1000,16 +1006,33 @@ internal class ProjectAssetManager
                 if (modifiedBy.TryGetValue(entry, out modifiers))
                 {
                     StructPropertyData currentEntry = baseEntries.Find(x => x.Name.ToString() == entry);
+                    Console.WriteLine($"Reanalyzing {currentEntry.Name}...");
                     foreach (PWDataEntry moddedValues in modifiers)
                     {
                         foreach (PropertyData currentProp in currentEntry.Value)
                         {
                             String propertyName = currentProp.Name.ToString();
-                            if (moddedValues.DataProperties.ContainsKey(propertyName))
+                            if (currentProp is ObjectPropertyData objProp)
+                            {
+                                if (objProp.Value.ToString() != "0")
+                                Console.WriteLine("  " + objProp.Value.ToImport(baseAsset).ObjectName);
+                            }
+                            if (currentProp is ArrayPropertyData arrayProp)
+                            {
+                                foreach (PropertyData data in arrayProp.Value)
+                                {
+                                    if (data is ObjectPropertyData subObjProp)
+                                    {
+                                        if (subObjProp.Value.ToString() != "0")
+                                            Console.WriteLine("  " + subObjProp.Value.ToImport(baseAsset).ObjectName);
+                                    }
+                                }
+                            }
+                            /* if (moddedValues.DataProperties.ContainsKey(propertyName))
                             {
                                 DataTableProperty currentProperty = moddedValues.DataProperties[propertyName];
                                 handleProperty(currentProp, baseAsset, currentProperty, moddedValues, importMap);
-                            }
+                            } */
                         }
                     }
                 }
